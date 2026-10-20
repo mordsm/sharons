@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Rule Engine Runs{% endblock %}
+
+{% block content %}
+<h1>Rule Engine Runs</h1>
+
+<div class="panel">
+  <form method="get">
+    <label for="source">Source</label>
+    <input id="source" name="source" value="{{ source }}">
+    <label for="event_type">Event Type</label>
+    <input id="event_type" name="event_type" value="{{ event_type }}">
+    <label for="final_decision">Decision</label>
+    <input id="final_decision" name="final_decision" value="{{ final_decision }}">
+    <label for="work_status">Work Status</label>
+    <select id="work_status" name="work_status">
+      <option value="">All</option>
+      {% for status in work_item_statuses %}
+        <option value="{{ status }}"{% if status == work_status %} selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Filter</button>
+  </form>
+</div>
+
+<h2>Work Queue</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Source</th>
+      <th>Status</th>
+      <th>Owner</th>
+      <th>Controls</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in work_items %}
+      <tr>
+        <td>
+          <div>{{ item.item_type }}</div>
+          <div class="meta">{{ item.action_type }}</div>
+          <div>{{ item.title }}</div>
+          <div class="meta">{{ item.purpose }}</div>
+        </td>
+        <td>
+          <div>{{ item.run.event_type }}</div>
+          <div class="meta">{{ item.run.source }} / {{ item.run.external_event_id }}</div>
+        </td>
+        <td class="status">{{ item.status }}</td>
+        <td>{{ item.owner_agent_id|default:"Unassigned" }}</td>
+        <td>
+          {% if item.status != "COMPLETED" and item.status != "CANCELLED" %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="item_id" value="{{ item.id }}">
+              <label for="owner-{{ item.id }}">Owner</label>
+              <input id="owner-{{ item.id }}" name="owner_agent_id" value="{{ item.owner_agent_id }}" placeholder="executive_assistant">
+              <label for="status-{{ item.id }}">Status</label>
+              <select id="status-{{ item.id }}" name="status">
+                <option value="">Keep current</option>
+                {% for status in work_item_statuses %}
+                  <option value="{{ status }}">{{ status }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit">Update</button>
+            </form>
+          {% else %}
+            <span class="meta">Closed</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr>
+        <td colspan="5">No rule engine work items found.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Decision History</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th>Event</th>
+      <th>Decision</th>
+      <th>Reasons</th>
+      <th>Approval</th>
+      <th>Actions</th>
+      <th>Created</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for run in runs %}
+      <tr>
+        <td>
+          <div>{{ run.source }}</div>
+          <div class="meta">{{ run.external_event_id }}</div>
+        </td>
+        <td>{{ run.event_type }}</td>
+        <td class="status">{{ run.final_decision }} / {{ run.risk_level }}</td>
+        <td>
+          {% for reason in run.reason_codes %}
+            <div class="meta">{{ reason }}</div>
+          {% empty %}
+            <div class="meta">No reason code</div>
+          {% endfor %}
+        </td>
+        <td>
+          {% if run.approval_id %}
+            <a href="{% url 'approval-detail' run.approval_id %}">Review</a>
+          {% else %}
+            <span class="meta">None</span>
+          {% endif %}
+        </td>
+        <td>
+          {% for action in run.allowed_actions %}
+            <div class="meta">{{ action.action_type }}</div>
+          {% endfor %}
+          {% for action in run.approval_required_actions %}
+            <div class="meta">{{ action.action_type }}</div>
+          {% endfor %}
+          {% for action in run.blocked_actions %}
+            <div class="meta">{{ action.action_type }}</div>
+          {% endfor %}
+        </td>
+        <td>{{ run.created_at }}</td>
+      </tr>
+    {% empty %}
+      <tr>
+        <td colspan="7">No rule engine runs found.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

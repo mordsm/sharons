@@ -1,0 +1,29 @@
+[project]
+name = "sharons"
+version = "0.1.0"
+description = "Django operating system for an AI-native company."
+readme = "README_INSTALL_HE.md"
+requires-python = ">=3.12"
+dependencies = [
+  "django>=5.1,<6.0",
+  "pydantic>=2.8",
+  "psycopg[binary]>=3.2",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-django>=4.9",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["sharons*", "core*", "portfolio*", "operations*", "governance*", "finance*", "mailbox*", "payments*", "research*", "product*", "executive_assistant*", "developer*", "project_manager*", "qa*"]
+exclude = ["agents*", "docs*"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "sharons.settings"
+python_files = ["test_*.py", "*_tests.py"]

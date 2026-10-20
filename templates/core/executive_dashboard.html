@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}Executive Overview{% endblock %}
+
+{% block content %}
+<h1>Executive Overview</h1>
+
+<div class="metric-grid">
+  <div class="metric"><span>{{ counts.active_objectives }}</span><strong>Active Objectives</strong></div>
+  <a class="metric" href="{% url 'task-list' %}"><span>{{ counts.open_tasks }}</span><strong>Open Tasks</strong></a>
+  <div class="metric"><span>{{ counts.blocked_tasks }}</span><strong>Blocked</strong></div>
+  <div class="metric"><span>{{ counts.unverified_deliveries }}</span><strong>Unverified</strong></div>
+  <div class="metric"><span>{{ counts.pending_approvals }}</span><strong>Approvals</strong></div>
+  <div class="metric"><span>{{ counts.chief_rule_engine_work_items }}</span><strong>Rule Work</strong></div>
+  <div class="metric"><span>{{ counts.active_agents }}</span><strong>Agents</strong></div>
+</div>
+
+<div class="panel">
+  <h2>Agent Queues</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Agent</th>
+        <th>Registered</th>
+        <th>Primary</th>
+        <th>Secondary</th>
+        <th>Risk</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for queue in agent_queues %}
+        <tr>
+          <td><a href="{% url queue.href %}">{{ queue.label }}</a><div class="meta">{{ queue.agent_id }}</div></td>
+          <td class="status">{% if queue.registered %}ACTIVE{% else %}MISSING{% endif %}</td>
+          <td>{{ queue.primary_queue }}<div class="meta">{{ queue.primary_label }}</div></td>
+          <td>{{ queue.secondary_queue }}<div class="meta">{{ queue.secondary_label }}</div></td>
+          <td>{{ queue.risk_queue }}<div class="meta">{{ queue.risk_label }}</div></td>
+          <td>
+            {% if queue.action %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="{{ queue.action }}">
+                <button type="submit" {% if not queue.action_enabled %}disabled{% endif %}>{{ queue.action_label }}</button>
+              </form>
+            {% else %}
+              <span class="meta">View</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6">No agent queues found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Objectives</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Code</th>
+        <th>Name</th>
+        <th>Owner</th>
+        <th>Due</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for objective in active_objectives %}
+        <tr>
+          <td>{{ objective.code }}</td>
+          <td>{{ objective.name }}</td>
+          <td>{{ objective.owner_agent_id|default:"Unassigned" }}</td>
+          <td>{{ objective.due_at|default:"-" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">No active objectives.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Needs Attention</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Item</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for approval in pending_approvals %}
+        <tr>
+          <td>Approval</td>
+          <td><a href="{% url 'approval-detail' approval.id %}">{{ approval.action }}</a><div class="meta">{{ approval.subject_type }} {{ approval.subject_id }}</div></td>
+          <td class="status">{{ approval.status }}</td>
+        </tr>
+      {% endfor %}
+      {% for task in blocked_tasks %}
+        <tr>
+          <td>Blocked Task</td>
+          <td><a href="{% url 'task-detail' task.id %}">{{ task.title }}</a><div class="meta">{{ task.id }}</div></td>
+          <td class="status">{{ task.status }}</td>
+        </tr>
+      {% endfor %}
+      {% for task in unverified_tasks %}
+        <tr>
+          <td>Unverified Delivery</td>
+          <td><a href="{% url 'task-detail' task.id %}">{{ task.title }}</a><div class="meta">{{ task.id }}</div></td>
+          <td class="status">{{ task.status }}</td>
+        </tr>
+      {% endfor %}
+      {% if not pending_approvals and not blocked_tasks and not unverified_tasks %}
+        <tr><td colspan="3">No urgent operating items.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Chief of Staff Rule Work</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Item</th>
+        <th>Source</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in chief_rule_engine_work_items %}
+        <tr>
+          <td>{{ item.item_type }}</td>
+          <td>
+            {{ item.title|default:item.purpose|default:item.action_type|default:"Review rule-engine item" }}
+            <div class="meta">{{ item.component|default:"-" }} {{ item.reason_code|default:"" }}</div>
+          </td>
+          <td>{{ item.run.event_type }}<div class="meta">{{ item.run.external_event_id }}</div></td>
+          <td class="status">{{ item.status }}</td>
+          <td>
+            {% if item.status != "COMPLETED" %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="complete_rule_engine_work_item">
+                <input type="hidden" name="item_id" value="{{ item.id }}">
+                <button type="submit">Complete</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5">No Chief of Staff rule work.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Agent Capacity</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Agent</th>
+        <th>Role</th>
+        <th>Load</th>
+        <th>Risk</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for agent in active_agents %}
+        <tr>
+          <td>{{ agent.agent_id }}</td>
+          <td>{{ agent.role }}</td>
+          <td>{{ agent.current_task_count }} / {{ agent.max_concurrent_tasks }}</td>
+          <td>{{ agent.max_risk_level }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">No active agents.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Recent Audit</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Action</th>
+        <th>Object</th>
+        <th>Actor</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in recent_audit_events %}
+        <tr>
+          <td>{{ event.occurred_at }}</td>
+          <td>{{ event.action }}</td>
+          <td>{{ event.object_type }}<div class="meta">{{ event.object_id }}</div></td>
+          <td>{{ event.actor_type }}: {{ event.actor_id }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">No audit events yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

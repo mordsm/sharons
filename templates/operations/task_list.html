@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Tasks{% endblock %}
+
+{% block content %}
+<h1>Tasks</h1>
+
+<div class="panel">
+  <form method="get">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="">All</option>
+      {% for status in statuses %}
+        <option value="{{ status }}"{% if status == selected_status %} selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+    <label for="objective_id">Objective ID</label>
+    <input id="objective_id" name="objective_id" value="{{ objective_id }}">
+    <label for="owner_agent_id">Owner Agent</label>
+    <input id="owner_agent_id" name="owner_agent_id" value="{{ owner_agent_id }}">
+    <button type="submit">Filter</button>
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Task</th>
+      <th>Objective</th>
+      <th>Status</th>
+      <th>Owner</th>
+      <th>Version</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for task in tasks %}
+      <tr>
+        <td><a href="{% url 'task-detail' task.id %}">{{ task.title }}</a><div class="meta">{{ task.id }}</div></td>
+        <td>{{ task.objective.code }}<div class="meta">{{ task.objective.name }}</div></td>
+        <td class="status">{{ task.status }}</td>
+        <td>{{ task.owner_agent_id|default:"Unassigned" }}</td>
+        <td>{{ task.version }}</td>
+        <td>{{ task.updated_at }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6">No tasks found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

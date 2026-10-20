@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Task Detail{% endblock %}
+
+{% block content %}
+<p><a href="{% url 'task-list' %}">Back to tasks</a></p>
+<h1>{{ task.title }}</h1>
+
+<div class="panel">
+  <dl class="details">
+    <dt>Status</dt><dd class="status">{{ task.status }}</dd>
+    <dt>Version</dt><dd>{{ task.version }}</dd>
+    <dt>Objective</dt><dd>{{ task.objective.code }} - {{ task.objective.name }}</dd>
+    <dt>Plan</dt><dd>{{ task.plan.name|default:"-" }}</dd>
+    <dt>Owner Agent</dt><dd>{{ task.owner_agent_id|default:"Unassigned" }}</dd>
+    <dt>Business Outcome</dt><dd>{{ task.business_outcome|default:"-" }}</dd>
+  </dl>
+</div>
+
+<div class="panel">
+  <h2>Actions</h2>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="transition">
+    {{ transition_form.idempotency_key }}
+    {{ transition_form.expected_version }}
+    <label for="{{ transition_form.to_status.id_for_label }}">Transition To</label>
+    {{ transition_form.to_status }}
+    <button type="submit">Transition</button>
+  </form>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="assign">
+    {{ assign_form.idempotency_key }}
+    {{ assign_form.expected_version }}
+    <label for="{{ assign_form.agent_id.id_for_label }}">Assign Agent</label>
+    {{ assign_form.agent_id }}
+    <button type="submit">Assign</button>
+  </form>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="evidence">
+    {{ evidence_form.idempotency_key }}
+    <label for="{{ evidence_form.kind.id_for_label }}">Evidence Kind</label>
+    {{ evidence_form.kind }}
+    <label for="{{ evidence_form.uri_or_reference.id_for_label }}">Reference</label>
+    {{ evidence_form.uri_or_reference }}
+    <label for="{{ evidence_form.checksum.id_for_label }}">Checksum</label>
+    {{ evidence_form.checksum }}
+    <label>{{ evidence_form.verified }} Verified</label>
+    <button type="submit">Attach Evidence</button>
+  </form>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="verify">
+    {{ verify_form.idempotency_key }}
+    <label>{{ verify_form.mark_passed }} Mark Required Criteria Passed</label>
+    <label for="{{ verify_form.notes.id_for_label }}">Notes</label>
+    {{ verify_form.notes }}
+    <button type="submit">Verify</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Acceptance Criteria</h2>
+  <table>
+    <thead><tr><th>Description</th><th>Type</th><th>Required</th><th>Status</th><th>Verified By</th></tr></thead>
+    <tbody>
+      {% for criterion in acceptance_criteria %}
+        <tr>
+          <td>{{ criterion.description }}</td>
+          <td>{{ criterion.criterion_type }}</td>
+          <td>{{ criterion.required }}</td>
+          <td class="status">{{ criterion.status }}</td>
+          <td>{{ criterion.verified_by|default:"-" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5">No acceptance criteria.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Evidence</h2>
+  <table>
+    <thead><tr><th>Kind</th><th>Reference</th><th>Verified</th><th>Created By</th></tr></thead>
+    <tbody>
+      {% for evidence in evidence_records %}
+        <tr>
+          <td>{{ evidence.kind }}</td>
+          <td>{{ evidence.uri_or_reference }}</td>
+          <td class="status">{{ evidence.verified }}</td>
+          <td>{{ evidence.created_by }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">No evidence recorded.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Agent Runs</h2>
+  <table>
+    <thead><tr><th>Agent</th><th>Attempt</th><th>Status</th><th>Started</th></tr></thead>
+    <tbody>
+      {% for run in agent_runs %}
+        <tr>
+          <td>{{ run.agent_id }}</td>
+          <td>{{ run.attempt_number }}</td>
+          <td class="status">{{ run.status }}</td>
+          <td>{{ run.started_at }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">No agent runs.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Audit Trail</h2>
+  <table>
+    <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Correlation</th></tr></thead>
+    <tbody>
+      {% for event in audit_events %}
+        <tr>
+          <td>{{ event.occurred_at }}</td>
+          <td>{{ event.action }}</td>
+          <td>{{ event.actor_type }}: {{ event.actor_id }}</td>
+          <td>{{ event.correlation_id }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">No task audit events.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

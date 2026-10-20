@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Approval Inbox{% endblock %}
+
+{% block content %}
+<h1>Approval Inbox</h1>
+
+<div class="panel">
+  <form method="get">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      {% for status in statuses %}
+        <option value="{{ status }}"{% if status == selected_status %} selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Filter</button>
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Subject</th>
+      <th>Action</th>
+      <th>Status</th>
+      <th>Expires</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for approval in approvals %}
+      <tr>
+        <td>
+          <div>{{ approval.subject_type }}</div>
+          <div class="meta">{{ approval.subject_id }} v{{ approval.subject_version }}</div>
+        </td>
+        <td>
+          <div>{{ approval.action }}</div>
+          <div class="meta">{{ approval.action_payload_hash }}</div>
+        </td>
+        <td class="status">{{ approval.status }}</td>
+        <td>{{ approval.expires_at }}</td>
+        <td><a href="{% url 'approval-detail' approval.id %}">Review</a></td>
+      </tr>
+    {% empty %}
+      <tr>
+        <td colspan="5">No approval requests found.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

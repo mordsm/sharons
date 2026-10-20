@@ -1,0 +1,504 @@
+{% extends "base.html" %}
+
+{% block title %}Executive Assistant - Sharons{% endblock %}
+
+{% block content %}
+<h1>Executive Assistant</h1>
+
+<div class="panel">
+  <h2>Queue Snapshot</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Ready Briefs</th>
+        <th>Archived Briefs</th>
+        <th>Taskable Briefs</th>
+        <th>Pending Proposals</th>
+        <th>Accepted Proposals</th>
+        <th>Dismissed Proposals</th>
+        <th>Email Drafts Needing Review</th>
+        <th>Approved Email Drafts</th>
+        <th>Confirmed Calendar Events</th>
+        <th>Tentative Calendar Events</th>
+        <th>Provider Configs Ready</th>
+        <th>Rule Work Open</th>
+        <th>Rule Work Assigned</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>{{ queue_counts.briefs.READY }}</td>
+        <td>{{ queue_counts.briefs.ARCHIVED }}</td>
+        <td>{{ queue_counts.ready_briefs_with_follow_ups }}</td>
+        <td>{{ queue_counts.task_proposals.PENDING }}</td>
+        <td>{{ queue_counts.task_proposals.ACCEPTED }}</td>
+        <td>{{ queue_counts.task_proposals.DISMISSED }}</td>
+        <td>{{ queue_counts.email_drafts.NEEDS_REVIEW }}</td>
+        <td>{{ queue_counts.email_drafts.APPROVED }}</td>
+        <td>{{ queue_counts.calendar_events.CONFIRMED }}</td>
+        <td>{{ queue_counts.calendar_events.TENTATIVE }}</td>
+        <td>{{ queue_counts.provider_sync_configs.READY_FOR_CONNECTOR }}</td>
+        <td>{{ queue_counts.rule_engine_work_items.OPEN }}</td>
+        <td>{{ queue_counts.rule_engine_work_items.ASSIGNED }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Create Brief</h2>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_brief">
+    {{ brief_create_form.idempotency_key }}
+    <label for="{{ brief_create_form.title.id_for_label }}">Title</label>
+    {{ brief_create_form.title }}
+    <label for="{{ brief_create_form.brief_type.id_for_label }}">Brief Type</label>
+    {{ brief_create_form.brief_type }}
+    <label for="{{ brief_create_form.source_window_days.id_for_label }}">Source Window Days</label>
+    {{ brief_create_form.source_window_days }}
+    <button type="submit">Create Brief</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Provider Readiness</h2>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="upsert_provider_sync_config">
+    {{ provider_sync_config_form.idempotency_key }}
+    <label for="{{ provider_sync_config_form.provider_type.id_for_label }}">Provider Type</label>
+    {{ provider_sync_config_form.provider_type }}
+    <label for="{{ provider_sync_config_form.provider_name.id_for_label }}">Provider Name</label>
+    {{ provider_sync_config_form.provider_name }}
+    <label for="{{ provider_sync_config_form.source.id_for_label }}">Read-Only Source</label>
+    {{ provider_sync_config_form.source }}
+    <label for="{{ provider_sync_config_form.status.id_for_label }}">Status</label>
+    {{ provider_sync_config_form.status }}
+    <label for="{{ provider_sync_config_form.scopes.id_for_label }}">Read-Only Scopes</label>
+    {{ provider_sync_config_form.scopes }}
+    <button type="submit">Save Provider Config</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Provider Readiness Summary</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Total</th>
+        <th>Ready</th>
+        <th>Blocked</th>
+        <th>Warnings</th>
+        <th>External Actions</th>
+        <th>Real Connections</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>{{ provider_readiness_summary.total }}</td>
+        <td>{{ provider_readiness_summary.ready }}</td>
+        <td>{{ provider_readiness_summary.blocked }}</td>
+        <td>{{ provider_readiness_summary.with_warnings }}</td>
+        <td>{{ provider_readiness_summary.external_action_enabled }}</td>
+        <td>{{ provider_readiness_summary.real_provider_connections_enabled }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>Provider Sync Configs</h2>
+{% if provider_sync_configs %}
+  <table>
+    <thead>
+      <tr>
+        <th>Provider</th>
+        <th>Type</th>
+        <th>Source</th>
+        <th>Mode</th>
+        <th>Status</th>
+        <th>Scopes</th>
+        <th>Last Sync</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for config in provider_sync_configs %}
+        <tr>
+          <td>{{ config.provider_name }}</td>
+          <td>{{ config.provider_type }}</td>
+          <td>{{ config.source }}</td>
+          <td>
+            {{ config.sync_mode }}
+            {% if config.no_external_action %}
+              <div class="meta">External actions disabled</div>
+            {% endif %}
+          </td>
+          <td><span class="status">{{ config.status }}</span></td>
+          <td>{{ config.scopes|join:", " }}</td>
+          <td>{{ config.last_sync_at|default:"Never" }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="panel">No provider sync configs are defined.</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Ingest Read-Only Email</h2>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="ingest_read_only_email">
+    {{ read_only_email_ingest_form.idempotency_key }}
+    <label for="{{ read_only_email_ingest_form.source.id_for_label }}">Source</label>
+    {{ read_only_email_ingest_form.source }}
+    <label for="{{ read_only_email_ingest_form.external_event_id.id_for_label }}">External Message ID</label>
+    {{ read_only_email_ingest_form.external_event_id }}
+    <label for="{{ read_only_email_ingest_form.sender.id_for_label }}">Sender</label>
+    {{ read_only_email_ingest_form.sender }}
+    <label for="{{ read_only_email_ingest_form.subject.id_for_label }}">Subject</label>
+    {{ read_only_email_ingest_form.subject }}
+    <label for="{{ read_only_email_ingest_form.body.id_for_label }}">Body</label>
+    {{ read_only_email_ingest_form.body }}
+    <button type="submit">Ingest Email</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Ingest Read-Only Calendar Event</h2>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="ingest_read_only_calendar_event">
+    {{ read_only_calendar_ingest_form.idempotency_key }}
+    <label for="{{ read_only_calendar_ingest_form.source.id_for_label }}">Source</label>
+    {{ read_only_calendar_ingest_form.source }}
+    <label for="{{ read_only_calendar_ingest_form.external_event_id.id_for_label }}">External Event ID</label>
+    {{ read_only_calendar_ingest_form.external_event_id }}
+    <label for="{{ read_only_calendar_ingest_form.title.id_for_label }}">Title</label>
+    {{ read_only_calendar_ingest_form.title }}
+    <label for="{{ read_only_calendar_ingest_form.starts_at.id_for_label }}">Starts At</label>
+    {{ read_only_calendar_ingest_form.starts_at }}
+    <label for="{{ read_only_calendar_ingest_form.ends_at.id_for_label }}">Ends At</label>
+    {{ read_only_calendar_ingest_form.ends_at }}
+    <label for="{{ read_only_calendar_ingest_form.organizer.id_for_label }}">Organizer</label>
+    {{ read_only_calendar_ingest_form.organizer }}
+    <label for="{{ read_only_calendar_ingest_form.attendees.id_for_label }}">Attendees</label>
+    {{ read_only_calendar_ingest_form.attendees }}
+    <label for="{{ read_only_calendar_ingest_form.location.id_for_label }}">Location</label>
+    {{ read_only_calendar_ingest_form.location }}
+    <label for="{{ read_only_calendar_ingest_form.description.id_for_label }}">Description</label>
+    {{ read_only_calendar_ingest_form.description }}
+    <button type="submit">Ingest Calendar Event</button>
+  </form>
+</div>
+
+<div class="panel">
+  <form method="get">
+    <label for="brief_type">Brief type</label>
+    <select id="brief_type" name="brief_type">
+      <option value="">All brief types</option>
+      {% for brief_type in brief_types %}
+        <option value="{{ brief_type }}" {% if brief_type == selected_brief_type %}selected{% endif %}>{{ brief_type }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="brief_status">Brief status</label>
+    <select id="brief_status" name="brief_status">
+      <option value="">All brief statuses</option>
+      {% for brief_status in brief_statuses %}
+        <option value="{{ brief_status }}" {% if brief_status == selected_brief_status %}selected{% endif %}>{{ brief_status }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="review_status">Proposal review status</label>
+    <select id="review_status" name="review_status">
+      <option value="">All proposal statuses</option>
+      {% for review_status in proposal_review_statuses %}
+        <option value="{{ review_status }}" {% if review_status == selected_review_status %}selected{% endif %}>{{ review_status }}</option>
+      {% endfor %}
+    </select>
+
+    <p><button type="submit">Apply filters</button></p>
+  </form>
+</div>
+
+<h2>Rule Engine Work</h2>
+{% if rule_engine_work_items %}
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Source</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in rule_engine_work_items %}
+        <tr>
+          <td>
+            <div>{{ item.item_type }}</div>
+            <div class="meta">{{ item.action_type }}</div>
+            <div>{{ item.title }}</div>
+            <div class="meta">{{ item.purpose }}</div>
+          </td>
+          <td>
+            <div>{{ item.run.event_type }}</div>
+            <div class="meta">{{ item.run.source }} / {{ item.run.external_event_id }}</div>
+          </td>
+          <td><span class="status">{{ item.status }}</span></td>
+          <td>{{ item.created_at }}</td>
+          <td>
+            {% if item.status != "COMPLETED" and item.status != "CANCELLED" %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="complete_rule_engine_work_item">
+                <input type="hidden" name="item_id" value="{{ item.id }}">
+                <button type="submit">Complete</button>
+              </form>
+            {% else %}
+              <span class="meta">Closed</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="panel">No rule-engine work items assigned to Executive Assistant.</div>
+{% endif %}
+
+<h2>Briefs</h2>
+{% if briefs %}
+  <table>
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th>Summary</th>
+        <th>Follow-ups</th>
+        <th>Decisions</th>
+        <th>Inbox</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for brief in briefs %}
+        <tr>
+          <td><a href="{% url 'executive-brief-detail' brief.id %}">{{ brief.title }}</a></td>
+          <td>{{ brief.brief_type }}</td>
+          <td><span class="status">{{ brief.status }}</span></td>
+          <td>{{ brief.created_at }}</td>
+          <td>{{ brief.summary }}</td>
+          <td>{{ brief.follow_ups|length }}</td>
+          <td>{{ brief.decisions_needed|length }}</td>
+          <td>{{ brief.inbox_items|length }}</td>
+          <td>
+            {% if brief.follow_ups %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="propose_tasks">
+                <input type="hidden" name="brief_id" value="{{ brief.id }}">
+                {{ task_proposal_form.idempotency_key }}
+                <label for="{{ task_proposal_form.objective_id.id_for_label }}">Objective</label>
+                {{ task_proposal_form.objective_id }}
+                <button type="submit">Propose Tasks</button>
+              </form>
+            {% else %}
+              <span class="meta">No taskable follow-ups</span>
+            {% endif %}
+            {% if brief.status == "READY" %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="archive_brief">
+                <input type="hidden" name="brief_id" value="{{ brief.id }}">
+                {{ brief_archive_form.idempotency_key }}
+                <button type="submit">Archive</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="panel">No executive briefs match the current filters.</div>
+{% endif %}
+
+<h2>Calendar Events</h2>
+{% if calendar_events %}
+  <table>
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>When</th>
+        <th>People</th>
+        <th>Status</th>
+        <th>Location</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in calendar_events %}
+        <tr>
+          <td>{{ event.title }}</td>
+          <td>
+            <div>{{ event.starts_at }}</div>
+            <div class="meta">to {{ event.ends_at }}</div>
+          </td>
+          <td>
+            {% if event.organizer %}<div>Organizer: {{ event.organizer }}</div>{% endif %}
+            {% if event.attendees %}<div class="meta">Attendees: {{ event.attendees|join:", " }}</div>{% endif %}
+          </td>
+          <td>
+            <span class="status">{{ event.status }}</span>
+            {% if event.no_external_schedule %}
+              <div class="meta">External scheduling disabled</div>
+            {% endif %}
+          </td>
+          <td>{{ event.location }}</td>
+          <td>
+            <div>{{ event.source }}</div>
+            <div class="meta">{{ event.external_event_id }}</div>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="panel">No calendar events are queued.</div>
+{% endif %}
+
+<h2>Email Drafts</h2>
+{% if email_drafts %}
+  <table>
+    <thead>
+      <tr>
+        <th>Subject</th>
+        <th>Recipients</th>
+        <th>Review</th>
+        <th>Body</th>
+        <th>Rationale</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for draft in email_drafts %}
+        <tr>
+          <td>{{ draft.subject }}</td>
+          <td>
+            <div>To: {{ draft.to_recipients|join:", " }}</div>
+            {% if draft.cc_recipients %}
+              <div class="meta">CC: {{ draft.cc_recipients|join:", " }}</div>
+            {% endif %}
+          </td>
+          <td>
+            <span class="status">{{ draft.review_status }}</span>
+            {% if draft.reviewed_at %}
+              <div class="meta">{{ draft.reviewed_by }} / {{ draft.reviewed_at }}</div>
+              {% if draft.review_note %}<div>{{ draft.review_note }}</div>{% endif %}
+            {% endif %}
+            {% if draft.no_external_send %}
+              <div class="meta">External send disabled</div>
+            {% endif %}
+          </td>
+          <td>{{ draft.body }}</td>
+          <td>{{ draft.rationale }}</td>
+          <td>{{ draft.created_at }}</td>
+          <td>
+            {% if draft.review_status == "NEEDS_REVIEW" %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="review_email_draft">
+                <input type="hidden" name="draft_id" value="{{ draft.id }}">
+                {{ email_draft_review_form.idempotency_key }}
+                <label for="{{ email_draft_review_form.decision.id_for_label }}">Decision</label>
+                {{ email_draft_review_form.decision }}
+                <label for="{{ email_draft_review_form.review_note.id_for_label }}">Note</label>
+                {{ email_draft_review_form.review_note }}
+                <button type="submit">Review Draft</button>
+              </form>
+            {% elif draft.review_status == "APPROVED" %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="request_email_draft_approval">
+                <input type="hidden" name="draft_id" value="{{ draft.id }}">
+                {{ email_draft_approval_form.idempotency_key }}
+                <label for="{{ email_draft_approval_form.expires_in_hours.id_for_label }}">Approval Expires In Hours</label>
+                {{ email_draft_approval_form.expires_in_hours }}
+                <button type="submit">Request Send Approval</button>
+              </form>
+            {% else %}
+              <span class="meta">Closed</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="panel">No email drafts are queued.</div>
+{% endif %}
+
+<h2>Task Proposals</h2>
+{% if task_proposals %}
+  <table>
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Review</th>
+        <th>Task status</th>
+        <th>Brief</th>
+        <th>External key</th>
+        <th>Reviewed</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for proposal in task_proposals %}
+        <tr>
+          <td>{{ proposal.title }}</td>
+          <td><span class="status">{{ proposal.review_status }}</span></td>
+          <td>{{ proposal.status }}</td>
+          <td>{{ proposal.brief.title }}</td>
+          <td>{{ proposal.external_key }}</td>
+          <td>
+            {% if proposal.reviewed_at %}
+              {{ proposal.reviewed_by }}<br>
+              <span class="meta">{{ proposal.reviewed_at }}</span>
+              {% if proposal.review_note %}<br>{{ proposal.review_note }}{% endif %}
+            {% else %}
+              <span class="meta">Pending</span>
+            {% endif %}
+          </td>
+          <td>{{ proposal.created_at }}</td>
+          <td>
+            {% if proposal.review_status == "PENDING" %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="review_proposal">
+                <input type="hidden" name="proposal_id" value="{{ proposal.id }}">
+                {{ proposal_review_form.idempotency_key }}
+                <label for="{{ proposal_review_form.decision.id_for_label }}">Decision</label>
+                {{ proposal_review_form.decision }}
+                <label for="{{ proposal_review_form.review_note.id_for_label }}">Note</label>
+                {{ proposal_review_form.review_note }}
+                <button type="submit">Review</button>
+              </form>
+            {% else %}
+              <span class="meta">Reviewed</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="panel">No task proposals match the current filters.</div>
+{% endif %}
+{% endblock %}

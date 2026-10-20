@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Outbox Recovery{% endblock %}
+
+{% block content %}
+<p><a href="{% url 'executive-dashboard' %}">Back to overview</a></p>
+<h1>Outbox Recovery</h1>
+
+<div class="panel">
+  <form method="get">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="">All</option>
+      {% for status in statuses %}
+        <option value="{{ status }}"{% if status == selected_status %} selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+    <label for="topic">Topic</label>
+    <input id="topic" name="topic" value="{{ topic }}">
+    <button type="submit">Filter</button>
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Topic</th>
+      <th>Status</th>
+      <th>Attempts</th>
+      <th>Next Attempt</th>
+      <th>Correlation</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for message in messages %}
+      <tr>
+        <td>{{ message.topic }}<div class="meta">{{ message.id }}</div></td>
+        <td class="status">{{ message.status }}</td>
+        <td>{{ message.attempts }}</td>
+        <td>{{ message.next_attempt_at|default:"-" }}</td>
+        <td>{{ message.correlation_id }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5">No outbox messages found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

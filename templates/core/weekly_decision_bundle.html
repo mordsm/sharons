@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}CEO 30-Minute Weekly Decision Bundle | Chief of Staff{% endblock %}
+
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+  <div>
+    <h1 style="margin:0 0 0.25rem 0;">CEO 30-Minute Weekly Decision Bundle</h1>
+    <div class="meta">Generated: {{ bundle.generated_at }} | Agenda: 30 minutes | Chief of Staff Operating Package</div>
+  </div>
+  <div>
+    <a href="{% url 'weekly-review' %}" class="btn" style="text-decoration:none; padding:8px 16px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#0f172a; font-weight:bold;">← Standard Weekly Review</a>
+  </div>
+</div>
+
+{% if bundle.executive_summary.resource_reallocation_alert %}
+<div class="alert" style="background:#fef2f2; border:1px solid #ef4444; color:#991b1b; padding:12px 16px; border-radius:8px; margin-bottom:1.5rem;">
+  ⚠️ <strong>Resource Allocation Notice:</strong> One or more quarterly objectives exceed team WIP concentration thresholds (> 65%). Under Rule 49, material reallocation of weekly team time requires explicit CEO review.
+</div>
+{% endif %}
+
+<div class="metric-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:1rem; margin-bottom:2rem;">
+  <div class="metric" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; text-align:center;">
+    <span style="font-size:1.8rem; font-weight:bold; color:#0284c7; display:block;">{{ bundle.executive_summary.active_objectives_count }}</span>
+    <strong style="font-size:0.85rem; color:#475569;">Active Objectives</strong>
+  </div>
+  <div class="metric" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; text-align:center;">
+    <span style="font-size:1.8rem; font-weight:bold; color:{% if bundle.executive_summary.pending_decisions_count > 0 %}#dc2626{% else %}#16a34a{% endif %}; display:block;">{{ bundle.executive_summary.pending_decisions_count }}</span>
+    <strong style="font-size:0.85rem; color:#475569;">Decisions Awaiting CEO</strong>
+  </div>
+  <div class="metric" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; text-align:center;">
+    <span style="font-size:1.8rem; font-weight:bold; color:{% if bundle.executive_summary.root_blockers_count > 0 %}#ea580c{% else %}#16a34a{% endif %}; display:block;">{{ bundle.executive_summary.root_blockers_count }}</span>
+    <strong style="font-size:0.85rem; color:#475569;">Root Blockers</strong>
+  </div>
+  <div class="metric" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; text-align:center;">
+    <span style="font-size:1.8rem; font-weight:bold; color:{% if bundle.executive_summary.critical_risks_count > 0 %}#dc2626{% else %}#16a34a{% endif %}; display:block;">{{ bundle.executive_summary.critical_risks_count }}</span>
+    <strong style="font-size:0.85rem; color:#475569;">Critical/High Risks</strong>
+  </div>
+  <div class="metric" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1rem; text-align:center;">
+    <span style="font-size:1.8rem; font-weight:bold; color:#16a34a; display:block;">{{ bundle.executive_summary.verified_deliveries_past_week }}</span>
+    <strong style="font-size:0.85rem; color:#475569;">Verified Deliveries (7d)</strong>
+  </div>
+</div>
+
+<!-- 1. CEO Decision Queue -->
+<div class="panel" style="background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:1.5rem; margin-bottom:2rem;">
+  <h2 style="margin-top:0; color:#0f172a; border-bottom:2px solid #e2e8f0; padding-bottom:0.5rem;">
+    ⚖️ 1. CEO Decision Queue (Decisions Awaiting Action)
+  </h2>
+  {% if bundle.decision_queue %}
+  <table>
+    <thead>
+      <tr>
+        <th>Action & Subject</th>
+        <th>Requested By</th>
+        <th>Expires</th>
+        <th>Chief of Staff Recommendation</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in bundle.decision_queue %}
+      <tr>
+        <td>
+          <strong>{{ item.action }}</strong>
+          <div class="meta">Subject: {{ item.subject_type }} ({{ item.subject_id }})</div>
+          {% if item.is_expired %}
+          <span style="background:#fee2e2; color:#991b1b; padding:2px 6px; border-radius:4px; font-size:0.75rem; font-weight:bold;">EXPIRED</span>
+          {% endif %}
+        </td>
+        <td>{{ item.requested_by }}</td>
+        <td>{{ item.expires_at }}</td>
+        <td>
+          <span style="background:{% if item.cos_recommendation == 'APPROVE' %}#dcfce7; color:#166534{% elif item.cos_recommendation == 'REJECT_EXPIRED' %}#fee2e2; color:#991b1b{% else %}#fef9c3; color:#854d0e{% endif %}; padding:2px 8px; border-radius:4px; font-weight:bold; font-size:0.8rem;">
+            {{ item.cos_recommendation }}
+          </span>
+          <div class="meta" style="margin-top:4px;">{{ item.cos_rationale }}</div>
+        </td>
+        <td>
+          <a href="/approvals/{{ item.approval_id }}/" style="background:#0284c7; color:#fff; text-decoration:none; padding:4px 10px; border-radius:4px; font-size:0.8rem; font-weight:bold;">Open Decision ↗</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#16a34a; font-weight:500;">✅ All pending decisions are cleared. No items currently require CEO approval.</p>
+  {% endif %}
+</div>
+
+<!-- 2. Critical Path & Root Blockers -->
+<div class="panel" style="background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:1.5rem; margin-bottom:2rem;">
+  <h2 style="margin-top:0; color:#0f172a; border-bottom:2px solid #e2e8f0; padding-bottom:0.5rem;">
+    🚧 2. Critical Path & Root Blockers (Unblocking Actions)
+  </h2>
+  {% if bundle.root_blockers %}
+  <table>
+    <thead>
+      <tr>
+        <th>Objective</th>
+        <th>Root Blocker Task</th>
+        <th>Status</th>
+        <th>Blocking Count</th>
+        <th>Tasks Waiting Downstream</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for rb in bundle.root_blockers %}
+      <tr>
+        <td><strong>{{ rb.objective_code }}</strong></td>
+        <td>{{ rb.title }}</td>
+        <td><span class="status">{{ rb.status }}</span></td>
+        <td><strong style="color:#dc2626;">{{ rb.blocking_count }} tasks</strong></td>
+        <td>
+          <ul style="margin:0; padding-left:1.2rem; font-size:0.85rem; color:#475569;">
+            {% for bt in rb.blocked_tasks %}
+            <li>{{ bt }}</li>
+            {% endfor %}
+          </ul>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#16a34a; font-weight:500;">✅ No circular dependencies or unhandled root blockers detected.</p>
+  {% endif %}
+</div>
+
+<!-- 3. Objective Risk Register Highlights -->
+<div class="panel" style="background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:1.5rem; margin-bottom:2rem;">
+  <h2 style="margin-top:0; color:#0f172a; border-bottom:2px solid #e2e8f0; padding-bottom:0.5rem;">
+    🛡️ 3. Objective Risk Register (Top Critical & High Exposure Risks)
+  </h2>
+  {% if bundle.top_risks %}
+  <table>
+    <thead>
+      <tr>
+        <th>Objective</th>
+        <th>Risk Title</th>
+        <th>Category</th>
+        <th>Severity / Likelihood</th>
+        <th>Mitigation Plan</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for risk in bundle.top_risks %}
+      <tr>
+        <td><strong>{{ risk.objective_code }}</strong></td>
+        <td>
+          <strong>{{ risk.title }}</strong>
+          {% if risk.description %}<div class="meta">{{ risk.description }}</div>{% endif %}
+        </td>
+        <td>{{ risk.category }}</td>
+        <td>
+          <span style="background:{% if risk.severity == 'CRITICAL' %}#fee2e2; color:#991b1b{% else %}#ffedd5; color:#9a3412{% endif %}; padding:2px 8px; border-radius:4px; font-weight:bold; font-size:0.75rem;">
+            {{ risk.severity }}
+          </span>
+          / {{ risk.likelihood }}
+        </td>
+        <td>{{ risk.mitigation_plan|default:"(No mitigation documented)" }}</td>
+        <td>{{ risk.status }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#16a34a; font-weight:500;">✅ No critical or high risks currently unresolved in the risk register.</p>
+  {% endif %}
+</div>
+
+<!-- 4. Team WIP Concentration & Stale Tasks -->
+<div class="panel" style="background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:1.5rem; margin-bottom:2rem;">
+  <h2 style="margin-top:0; color:#0f172a; border-bottom:2px solid #e2e8f0; padding-bottom:0.5rem;">
+    ⏱️ 4. Work-In-Progress (WIP) & Stale Work Controls
+  </h2>
+  
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;">
+    <div>
+      <h3 style="margin-top:0; font-size:1rem; color:#334155;">Team Allocation by Objective</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Objective</th>
+            <th>Active Tasks</th>
+            <th>% Team Allocation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in bundle.resource_distribution %}
+          <tr>
+            <td><strong>{{ r.objective_code }}</strong></td>
+            <td>{{ r.task_count }}</td>
+            <td>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div style="flex:1; background:#e2e8f0; height:8px; border-radius:4px; overflow:hidden;">
+                  <div style="width:{{ r.percentage_of_team_wip }}%; background:{% if r.percentage_of_team_wip > 65 %}#ef4444{% else %}#0284c7{% endif %}; height:100%;"></div>
+                </div>
+                <span>{{ r.percentage_of_team_wip }}%</span>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div>
+      <h3 style="margin-top:0; font-size:1rem; color:#334155;">Stale Tasks (> 5 days inactive)</h3>
+      {% if bundle.stale_tasks %}
+      <table>
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Inactive</th>
+            <th>CoS Recommendation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for st in bundle.stale_tasks|slice:":5" %}
+          <tr>
+            <td>
+              <strong>{{ st.title }}</strong>
+              <div class="meta">{{ st.objective_code }} | Owner: {{ st.owner_agent_id }}</div>
+            </td>
+            <td><strong style="color:#ea580c;">{{ st.days_inactive }}d</strong></td>
+            <td><span class="meta">{{ st.recommendation }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p style="color:#16a34a; font-weight:500;">✅ No stale tasks detected. Work is moving forward.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- 5. Verified Deliveries (Past 7 Days) -->
+<div class="panel" style="background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:1.5rem;">
+  <h2 style="margin-top:0; color:#0f172a; border-bottom:2px solid #e2e8f0; padding-bottom:0.5rem;">
+    🏆 5. Verified Deliveries (Past 7 Days)
+  </h2>
+  {% if bundle.verified_deliveries %}
+  <table>
+    <thead>
+      <tr>
+        <th>Objective</th>
+        <th>Task Title</th>
+        <th>Acceptance Criteria Passed</th>
+        <th>Verified Evidence</th>
+        <th>Completed At</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for vd in bundle.verified_deliveries %}
+      <tr>
+        <td><strong>{{ vd.objective_code }}</strong></td>
+        <td>{{ vd.title }}</td>
+        <td><strong style="color:#16a34a;">{{ vd.acceptance_criteria_passed }}</strong></td>
+        <td>{{ vd.verified_evidence_count }} evidence artifacts</td>
+        <td>{{ vd.completed_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#64748b;">No completed deliveries verified in the past 7 days.</p>
+  {% endif %}
+</div>
+{% endblock %}
+

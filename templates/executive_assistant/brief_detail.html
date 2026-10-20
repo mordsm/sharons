@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Executive Brief - Sharons{% endblock %}
+
+{% block content %}
+<p><a href="{% url 'executive-assistant-dashboard' %}">Back to Executive Assistant</a></p>
+<h1>{{ brief.title }}</h1>
+
+<div class="panel">
+  <dl class="details">
+    <dt>Type</dt><dd>{{ brief.brief_type }}</dd>
+    <dt>Status</dt><dd class="status">{{ brief.status }}</dd>
+    <dt>Created</dt><dd>{{ brief.created_at }}</dd>
+    <dt>Created By</dt><dd>{{ brief.created_by }}</dd>
+    <dt>External Send</dt><dd>{{ brief.no_external_send|yesno:"Disabled,Enabled" }}</dd>
+    <dt>Source Window</dt><dd>{{ brief.source_window }}</dd>
+  </dl>
+  {% if brief.status == "READY" %}
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="archive_brief">
+      {{ brief_archive_form.idempotency_key }}
+      <button type="submit">Archive Brief</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Summary</h2>
+  <p>{{ brief.summary }}</p>
+</div>
+
+<div class="panel">
+  <h2>Agenda Items</h2>
+  <table>
+    <thead><tr><th>Topic</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for item in brief.agenda_items %}
+        <tr>
+          <td>{{ item.topic|default:"-" }}</td>
+          <td>{{ item.count|default:"0" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="2">No agenda items.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Follow-ups</h2>
+  {% if brief.status == "READY" and brief.follow_ups %}
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="propose_tasks">
+      {{ task_proposal_form.idempotency_key }}
+      <label for="{{ task_proposal_form.objective_id.id_for_label }}">Objective</label>
+      {{ task_proposal_form.objective_id }}
+      <button type="submit">Propose Tasks</button>
+    </form>
+  {% endif %}
+  <table>
+    <thead><tr><th>Title</th><th>Reason</th><th>Source Task</th></tr></thead>
+    <tbody>
+      {% for follow_up in brief.follow_ups %}
+        <tr>
+          <td>{{ follow_up.title|default:"-" }}</td>
+          <td>{{ follow_up.reason|default:"-" }}</td>
+          <td>
+            {% if follow_up.task_id %}
+              <a href="{% url 'task-detail' follow_up.task_id %}">{{ follow_up.task_id }}</a>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="3">No follow-ups.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Decisions Needed</h2>
+  <table>
+    <thead><tr><th>Action</th><th>Subject</th><th>Approval</th><th>Expires</th></tr></thead>
+    <tbody>
+      {% for decision in brief.decisions_needed %}
+        <tr>
+          <td>{{ decision.action|default:"-" }}</td>
+          <td>{{ decision.subject_type|default:"-" }}</td>
+          <td>
+            {% if decision.approval_id %}
+              <a href="{% url 'approval-detail' decision.approval_id %}">{{ decision.approval_id }}</a>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>{{ decision.expires_at|default:"-" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">No decisions needed.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Inbox Items</h2>
+  <table>
+    <thead><tr><th>Sender</th><th>Subject</th><th>Classification</th><th>Proposed Action</th></tr></thead>
+    <tbody>
+      {% for item in brief.inbox_items %}
+        <tr>
+          <td>{{ item.sender|default:"-" }}</td>
+          <td>{{ item.subject|default:"-" }}</td>
+          <td class="status">{{ item.classification|default:"-" }}</td>
+          <td>{{ item.proposed_action.type|default:"-" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">No inbox items.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Task Proposals</h2>
+  <table>
+    <thead><tr><th>Title</th><th>Review</th><th>Reviewed</th><th>Task Status</th><th>Task</th><th>External Key</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for proposal in task_proposals %}
+        <tr>
+          <td>{{ proposal.title }}</td>
+          <td class="status">{{ proposal.review_status }}</td>
+          <td>
+            {% if proposal.reviewed_at %}
+              {{ proposal.reviewed_by }}<br>
+              <span class="meta">{{ proposal.reviewed_at }}</span>
+              {% if proposal.review_note %}<br>{{ proposal.review_note }}{% endif %}
+            {% else %}
+              <span class="meta">Pending</span>
+            {% endif %}
+          </td>
+          <td>{{ proposal.status }}</td>
+          <td><a href="{% url 'task-detail' proposal.task_id %}">{{ proposal.task_id }}</a></td>
+          <td>{{ proposal.external_key }}</td>
+          <td>
+            {% if proposal.review_status == "PENDING" %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="review_proposal">
+                <input type="hidden" name="proposal_id" value="{{ proposal.id }}">
+                {{ proposal_review_form.idempotency_key }}
+                <label for="{{ proposal_review_form.decision.id_for_label }}">Decision</label>
+                {{ proposal_review_form.decision }}
+                <label for="{{ proposal_review_form.review_note.id_for_label }}">Note</label>
+                {{ proposal_review_form.review_note }}
+                <button type="submit">Review</button>
+              </form>
+            {% else %}
+              <span class="meta">Reviewed</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7">No task proposals have been created from this brief.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

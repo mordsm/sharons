@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Approval {{ approval.id }}{% endblock %}
+
+{% block content %}
+<p><a href="{% url 'approval-inbox' %}">Back to inbox</a></p>
+
+<h1>Approval Request</h1>
+
+{% if error %}
+  <div class="error">{{ error }}</div>
+{% endif %}
+
+<div class="panel">
+  <p><strong>Status:</strong> {{ approval.status }}</p>
+  <p><strong>Subject:</strong> {{ approval.subject_type }} / {{ approval.subject_id }}</p>
+  <p><strong>Subject version:</strong> {{ approval.subject_version }}</p>
+  <p><strong>Action:</strong> {{ approval.action }}</p>
+  <p><strong>Payload hash:</strong> {{ approval.action_payload_hash }}</p>
+  <p><strong>Requested by:</strong> {{ approval.requested_by }}</p>
+  <p><strong>Expires at:</strong> {{ approval.expires_at }}</p>
+  {% if approval.decided_at %}
+    <p><strong>Decided by:</strong> {{ approval.decided_by }} at {{ approval.decided_at }}</p>
+  {% endif %}
+</div>
+
+{% if approval.status == "PENDING" %}
+  <form method="post">
+    {% csrf_token %}
+    <div class="panel">
+      {{ form.decision }}
+
+      <label for="{{ form.subject_version.id_for_label }}">Subject version</label>
+      {{ form.subject_version }}
+      {{ form.subject_version.errors }}
+
+      <label for="{{ form.action_payload.id_for_label }}">Exact action payload JSON</label>
+      {{ form.action_payload }}
+      {{ form.action_payload.errors }}
+
+      <button type="submit">Submit Decision</button>
+    </div>
+  </form>
+{% endif %}
+{% endblock %}

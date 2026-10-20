@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Mock Inbox{% endblock %}
+
+{% block content %}
+<p><a href="{% url 'executive-dashboard' %}">Back to overview</a></p>
+<h1>Mock Inbox</h1>
+
+<div class="panel">
+  <form method="get">
+    <label for="classification">Classification</label>
+    <select id="classification" name="classification">
+      <option value="">All</option>
+      {% for classification in classifications %}
+        <option value="{{ classification }}"{% if classification == selected_classification %} selected{% endif %}>{{ classification }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Filter</button>
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Subject</th>
+      <th>Sender</th>
+      <th>Classification</th>
+      <th>Proposed Action</th>
+      <th>Rule Decision</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for message in messages %}
+      <tr>
+        <td>{{ message.subject }}<div class="meta">{{ message.source }} / {{ message.external_event_id }}</div></td>
+        <td>{{ message.sender }}</td>
+        <td class="status">{{ message.classification }}</td>
+        <td>{{ message.proposed_action.type }}</td>
+        <td class="status">{{ message.rule_decision }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5">No mock inbox messages found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

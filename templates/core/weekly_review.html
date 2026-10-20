@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Weekly Review{% endblock %}
+
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center;">
+  <p><a href="{% url 'executive-dashboard' %}">Back to overview</a></p>
+  <p><a href="{% url 'weekly-decision-bundle-page' %}" style="background:#0284c7; color:#fff; text-decoration:none; padding:6px 12px; border-radius:6px; font-weight:bold; font-size:0.85rem;">⚖️ Open CEO 30-Minute Decision Bundle ↗</a></p>
+</div>
+<h1>Weekly Review</h1>
+<p class="meta">Generated at {{ generated_at }}</p>
+
+<div class="metric-grid">
+  <div class="metric"><span>{{ counts.active_objectives }}</span><strong>Objectives</strong></div>
+  <a class="metric" href="{% url 'task-list' %}"><span>{{ counts.open_tasks }}</span><strong>Open Tasks</strong></a>
+  <a class="metric" href="{% url 'approval-inbox' %}"><span>{{ counts.pending_approvals }}</span><strong>Approvals</strong></a>
+  <div class="metric"><span>{{ counts.blocked_tasks }}</span><strong>Blocked</strong></div>
+  <div class="metric"><span>{{ counts.unverified_deliveries }}</span><strong>Unverified</strong></div>
+  <div class="metric"><span>{{ counts.completed_tasks }}</span><strong>Completed</strong></div>
+</div>
+
+<div class="panel">
+  <h2>Risks</h2>
+  <table>
+    <thead><tr><th>Level</th><th>Risk</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for risk in risks %}
+        <tr><td class="status">{{ risk.level }}</td><td>{{ risk.text }}</td><td>{{ risk.count }}</td></tr>
+      {% empty %}
+        <tr><td colspan="3">No immediate operating risks surfaced.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Next Actions</h2>
+  <ul>
+    {% for action in next_actions %}
+      <li>{{ action }}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="panel">
+  <h2>Pending Approvals</h2>
+  <table>
+    <thead><tr><th>Action</th><th>Subject</th><th>Expires</th></tr></thead>
+    <tbody>
+      {% for approval in pending_approvals %}
+        <tr>
+          <td><a href="{% url 'approval-detail' approval.id %}">{{ approval.action }}</a></td>
+          <td>{{ approval.subject_type }}<div class="meta">{{ approval.subject_id }} v{{ approval.subject_version }}</div></td>
+          <td>{{ approval.expires_at }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="3">No pending approvals.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Blocked Work</h2>
+  <table>
+    <thead><tr><th>Task</th><th>Objective</th><th>Owner</th></tr></thead>
+    <tbody>
+      {% for task in blocked_tasks %}
+        <tr>
+          <td><a href="{% url 'task-detail' task.id %}">{{ task.title }}</a><div class="meta">{{ task.id }}</div></td>
+          <td>{{ task.objective.code }}<div class="meta">{{ task.objective.name }}</div></td>
+          <td>{{ task.owner_agent_id|default:"Unassigned" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="3">No blocked tasks.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Verification Queue</h2>
+  <table>
+    <thead><tr><th>Task</th><th>Status</th><th>Owner</th></tr></thead>
+    <tbody>
+      {% for task in unverified_tasks %}
+        <tr>
+          <td><a href="{% url 'task-detail' task.id %}">{{ task.title }}</a></td>
+          <td class="status">{{ task.status }}</td>
+          <td>{{ task.owner_agent_id|default:"Unassigned" }}</td>
+        </tr>
+      {% endfor %}
+      {% for task in verifying_tasks %}
+        <tr>
+          <td><a href="{% url 'task-detail' task.id %}">{{ task.title }}</a></td>
+          <td class="status">{{ task.status }}</td>
+          <td>{{ task.owner_agent_id|default:"Unassigned" }}</td>
+        </tr>
+      {% endfor %}
+      {% if not unverified_tasks and not verifying_tasks %}
+        <tr><td colspan="3">No verification queue items.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Recent Completions</h2>
+  <table>
+    <thead><tr><th>Task</th><th>Objective</th><th>Updated</th></tr></thead>
+    <tbody>
+      {% for task in completed_tasks %}
+        <tr>
+          <td><a href="{% url 'task-detail' task.id %}">{{ task.title }}</a></td>
+          <td>{{ task.objective.code }}</td>
+          <td>{{ task.updated_at }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="3">No completed tasks recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

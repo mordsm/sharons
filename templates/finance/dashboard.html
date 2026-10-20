@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Finance{% endblock %}
+
+{% block content %}
+<p><a href="{% url 'executive-dashboard' %}">Back to overview</a></p>
+<h1>Finance</h1>
+
+<div class="metric-grid">
+  <div class="metric"><span>{{ income_total }}</span><strong>Income</strong></div>
+  <div class="metric"><span>{{ expense_total }}</span><strong>Expenses</strong></div>
+  <div class="metric"><span>{{ net_total }}</span><strong>Net</strong></div>
+  <div class="metric"><span>{{ unreconciled_count }}</span><strong>Unreconciled</strong></div>
+  <div class="metric"><span>{{ discrepancy_count }}</span><strong>Discrepancies</strong></div>
+  <div class="metric"><span>{{ needs_review_count }}</span><strong>Needs Review</strong></div>
+  <div class="metric"><span>{{ rule_engine_work_item_counts.OPEN }}</span><strong>Rule Work Open</strong></div>
+  <div class="metric"><span>{{ rule_engine_work_item_counts.ASSIGNED }}</span><strong>Rule Work Assigned</strong></div>
+</div>
+
+<div class="panel">
+  <h2>Rule Engine Work</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Source</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in rule_engine_work_items %}
+        <tr>
+          <td>
+            <div>{{ item.item_type }}</div>
+            <div class="meta">{{ item.action_type }}</div>
+            <div>{{ item.title }}</div>
+            <div class="meta">{{ item.purpose }}</div>
+          </td>
+          <td>
+            <div>{{ item.run.event_type }}</div>
+            <div class="meta">{{ item.run.source }} / {{ item.run.external_event_id }}</div>
+          </td>
+          <td class="status">{{ item.status }}</td>
+          <td>{{ item.created_at }}</td>
+          <td>
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="complete_rule_engine_work_item">
+              <input type="hidden" name="item_id" value="{{ item.id }}">
+              <button type="submit">Complete</button>
+            </form>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5">No finance rule-engine work items assigned.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Recent Records</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Amount</th>
+        <th>Source</th>
+        <th>Reconciliation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for record in records %}
+        <tr>
+          <td>{{ record.occurred_on }}</td>
+          <td>{{ record.record_type }}</td>
+          <td>{{ record.description }}<div class="meta">{{ record.category }}</div></td>
+          <td>{{ record.amount }} {{ record.currency }}</td>
+          <td>{{ record.source }}</td>
+          <td class="status">{{ record.reconciliation_status }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6">No finance records yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
