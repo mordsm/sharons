@@ -107,3 +107,115 @@ class ProductSpecDraft(models.Model):
         self.title = self.title.strip()
         self.created_by = self.created_by.strip() or "api"
         super().save(*args, **kwargs)
+
+
+class ProductMilestone(models.Model):
+    class Status(models.TextChoices):
+        PLANNED = "PLANNED"
+        ACTIVE = "ACTIVE"
+        COMPLETED = "COMPLETED"
+        DELAYED = "DELAYED"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="milestones")
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    target_date = models.DateField()
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.PLANNED)
+    release_notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["target_date", "created_at"]
+
+    def clean(self) -> None:
+        if not self.name or not self.name.strip():
+            raise ValidationError({"name": "Milestone name cannot be empty."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        self.name = self.name.strip()
+        self.description = self.description.strip()
+        self.release_notes = self.release_notes.strip()
+        super().save(*args, **kwargs)
+
+
+class ProductFeature(models.Model):
+    class Status(models.TextChoices):
+        BACKLOG = "BACKLOG"
+        PLANNED = "PLANNED"
+        IN_PROGRESS = "IN_PROGRESS"
+        COMPLETED = "COMPLETED"
+        ARCHIVED = "ARCHIVED"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="features")
+    milestone = models.ForeignKey(ProductMilestone, on_delete=models.SET_NULL, null=True, blank=True, related_name="features")
+    title = models.CharField(max_length=200)
+    user_story = models.TextField(blank=True)
+    acceptance_criteria = models.JSONField(default=list, blank=True)
+    reach = models.PositiveIntegerField(default=100)
+    impact = models.FloatField(default=1.0)
+    confidence = models.FloatField(default=0.8)
+    effort = models.FloatField(default=1.0)
+    rice_score = models.FloatField(default=80.0)
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.BACKLOG)
+    created_by = models.CharField(max_length=128, default="product_manager")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-rice_score", "created_at"]
+
+    def calculate_rice(self) -> float:
+        eff = max(0.1, float(self.effort))
+        score = (float(self.reach) * float(self.impact) * float(self.confidence)) / eff
+        return round(score, 2)
+
+    def clean(self) -> None:
+        if not self.title or not self.title.strip():
+            raise ValidationError({"title": "Feature title cannot be empty."})
+        if self.effort <= 0:
+            raise ValidationError({"effort": "Effort must be greater than 0."})
+
+    def save(self, *args, **kwargs):
+        self.rice_score = self.calculate_rice()
+        self.full_clean()
+        self.title = self.title.strip()
+        self.user_story = self.user_story.strip()
+        super().save(*args, **kwargs)
+
+
+class ProductFeedback(models.Model):
+    class Sentiment(models.TextChoices):
+        POSITIVE = "POSITIVE"
+        NEUTRAL = "NEUTRAL"
+        NEGATIVE = "NEGATIVE"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="feedbacks")
+    feature = models.ForeignKey(ProductFeature, on_delete=models.SET_NULL, null=True, blank=True, related_name="feedbacks")
+    source = models.CharField(max_length=128)
+    user_segment = models.CharField(max_length=64, default="General")
+    content = models.TextField()
+    sentiment = models.CharField(max_length=16, choices=Sentiment.choices, default=Sentiment.NEUTRAL)
+    action_item = models.CharField(max_length=240, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def clean(self) -> None:
+        if not self.source or not self.source.strip():
+            raise ValidationError({"source": "Source cannot be empty."})
+        if not self.content or not self.content.strip():
+            raise ValidationError({"content": "Content cannot be empty."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        self.source = self.source.strip()
+        self.content = self.content.strip()
+        self.action_item = self.action_item.strip()
+        super().save(*args, **kwargs)
+

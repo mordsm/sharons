@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}Product Manager - Sharons{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+  <div>
+    <h1 style="margin: 0;">🚀 Product Management & Roadmap</h1>
+    <div class="meta">RICE Prioritization &bull; Milestones &bull; Voice of Customer Feedback</div>
+  </div>
+  <div>
+    <a href="/executive-assistant/morning-brief/" style="margin-right: 12px; text-decoration: none;">☀️ Morning Brief</a>
+    <a href="/review/weekly/decision-bundle/" style="display: inline-block; padding: 10px 16px; background: #0f766e; color: white; border-radius: 4px; text-decoration: none; font-weight: bold;">
+      📊 Weekly Decision Bundle &rarr;
+    </a>
+  </div>
+</div>
+
+<!-- 4 Key Metrics -->
+<div class="metric-grid">
+  <div class="metric">
+    <span>{{ backlog|length }}</span>
+    <strong>Backlog Features</strong>
+  </div>
+  <div class="metric">
+    <span style="color: #2563eb;">{{ roadmap|length }}</span>
+    <strong>Active Milestones</strong>
+  </div>
+  <div class="metric">
+    <span style="color: #dc2626;">
+      {% for f in backlog %}{% if f.priority_tier == "P0_CRITICAL" or f.priority_tier == "P1_HIGH" %}* {% endif %}{% endfor %}
+    </span>
+    <strong>High Priority (P0/P1)</strong>
+  </div>
+  <div class="metric">
+    <span style="color: #059669;">{{ feedback_summary.total_feedback_count }}</span>
+    <strong>Customer Inputs</strong>
+  </div>
+</div>
+
+<!-- 1. Product Roadmap & Milestones -->
+<div class="panel">
+  <h2>1. Product Roadmap & Milestone Execution</h2>
+  {% if roadmap %}
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
+      {% for m in roadmap %}
+        <div style="border: 1px solid #dde2e8; border-radius: 6px; padding: 16px; background: #fafbfc;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <h3 style="margin: 0 0 8px 0; font-size: 17px;">{{ m.name }}</h3>
+            {% if m.health == "COMPLETED" %}
+              <span style="background: #dcfce7; color: #166534; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">COMPLETED</span>
+            {% elif m.health == "DELAYED" %}
+              <span style="background: #fee2e2; color: #991b1b; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">DELAYED</span>
+            {% elif m.health == "AT_RISK" %}
+              <span style="background: #fef3c7; color: #92400e; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">AT RISK</span>
+            {% else %}
+              <span style="background: #e0f2fe; color: #075985; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">ON TRACK</span>
+            {% endif %}
+          </div>
+          <div class="meta" style="margin-bottom: 12px;">Target: {{ m.target_date }} ({{ m.days_remaining }} days remaining)</div>
+          
+          <!-- Progress Bar -->
+          <div style="background: #e2e8f0; border-radius: 4px; height: 10px; width: 100%; overflow: hidden; margin-bottom: 8px;">
+            <div style="background: #1f5fa8; height: 100%; width: {{ m.progress_percentage }}%;"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px; color: #475569;">
+            <span>{{ m.features_completed }} of {{ m.features_total }} features completed</span>
+            <strong>{{ m.progress_percentage }}%</strong>
+          </div>
+
+          {% if m.description %}
+            <p style="font-size: 13px; margin: 10px 0 0 0; color: #64748b;">{{ m.description }}</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="meta">No active roadmap milestones defined. Create milestones via the REST API or Django Admin.</p>
+  {% endif %}
+</div>
+
+<!-- 2. RICE Prioritized Backlog -->
+<div class="panel">
+  <h2>2. RICE Ranked Backlog</h2>
+  <div class="meta" style="margin-bottom: 12px;">Formula: <code>(Reach &times; Impact &times; Confidence) / Effort = RICE Score</code></div>
+  {% if backlog %}
+    <table>
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Priority</th>
+          <th>Feature & User Story</th>
+          <th>Reach</th>
+          <th>Impact</th>
+          <th>Confidence</th>
+          <th>Effort</th>
+          <th>RICE Score</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in backlog %}
+          <tr>
+            <td style="font-weight: bold; width: 40px; text-align: center;">#{{ f.rank }}</td>
+            <td style="width: 100px;">
+              {% if f.priority_tier == "P0_CRITICAL" %}
+                <span style="background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 12px;">P0 CRITICAL</span>
+              {% elif f.priority_tier == "P1_HIGH" %}
+                <span style="background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 12px;">P1 HIGH</span>
+              {% elif f.priority_tier == "P2_MEDIUM" %}
+                <span style="background: #e0f2fe; color: #075985; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 12px;">P2 MEDIUM</span>
+              {% else %}
+                <span style="background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 12px;">P3 LOW</span>
+              {% endif %}
+            </td>
+            <td>
+              <strong>{{ f.title }}</strong>
+              {% if f.user_story %}
+                <div class="meta" style="margin-top: 4px;">{{ f.user_story }}</div>
+              {% endif %}
+            </td>
+            <td style="text-align: right;">{{ f.reach }}</td>
+            <td style="text-align: right;">{{ f.impact }}x</td>
+            <td style="text-align: right;">{{ f.confidence }}</td>
+            <td style="text-align: right;">{{ f.effort }}w</td>
+            <td style="font-weight: bold; font-size: 15px; color: #1e3a8a; text-align: right;">{{ f.rice_score }}</td>
+            <td><code>{{ f.status }}</code></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="meta">Backlog is currently empty. Use the PRD generator to decompose specifications into scored features.</p>
+  {% endif %}
+</div>
+
+<!-- 3. Customer Discovery & Voice of Customer Feedback -->
+<div class="panel">
+  <h2>3. Voice of Customer & Discovery Insights</h2>
+  <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 16px; background: #f8fafc; padding: 12px 16px; border-radius: 6px;">
+    <div><strong>Sentiment Split:</strong></div>
+    <div style="color: #166534; font-weight: bold;">🟢 Positive: {{ feedback_summary.sentiment_distribution.positive }}</div>
+    <div style="color: #475569; font-weight: bold;">⚪ Neutral: {{ feedback_summary.sentiment_distribution.neutral }}</div>
+    <div style="color: #991b1b; font-weight: bold;">🔴 Negative: {{ feedback_summary.sentiment_distribution.negative }}</div>
+  </div>
+
+  {% if feedback_summary.recent_feedback %}
+    <table>
+      <thead>
+        <tr>
+          <th>Segment</th>
+          <th>Sentiment</th>
+          <th>Source</th>
+          <th>Feedback Quote / Finding</th>
+          <th>Action Item</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in feedback_summary.recent_feedback %}
+          <tr>
+            <td><code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">{{ item.user_segment }}</code></td>
+            <td>
+              {% if item.sentiment == "POSITIVE" %}
+                <span style="color: #16a34a; font-weight: bold;">POSITIVE</span>
+              {% elif item.sentiment == "NEGATIVE" %}
+                <span style="color: #dc2626; font-weight: bold;">NEGATIVE</span>
+              {% else %}
+                <span style="color: #64748b; font-weight: bold;">NEUTRAL</span>
+              {% endif %}
+            </td>
+            <td class="meta">{{ item.source }}</td>
+            <td>{{ item.content }}</td>
+            <td>
+              {% if item.action_item %}
+                <strong>{{ item.action_item }}</strong>
+              {% else %}
+                <span class="meta">-</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="meta">No customer feedback ingested yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
+

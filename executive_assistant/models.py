@@ -3,12 +3,15 @@ import uuid
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from operations.models import Task
+
 
 class ExecutiveBrief(models.Model):
     class BriefType(models.TextChoices):
         WEEKLY_REVIEW_PREP = "WEEKLY_REVIEW_PREP"
         FOLLOW_UPS = "FOLLOW_UPS"
         INBOX_TRIAGE = "INBOX_TRIAGE"
+        MORNING_BRIEF = "MORNING_BRIEF"
 
     class Status(models.TextChoices):
         READY = "READY"
@@ -271,3 +274,45 @@ class ExecutiveProviderSyncConfig(models.Model):
         self.scopes = [str(item).strip() for item in self.scopes if str(item).strip()]
         self.created_by = self.created_by.strip() or "api"
         super().save(*args, **kwargs)
+
+
+class DelegatedTaskFollowUp(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "PENDING"
+        ON_TRACK = "ON_TRACK"
+        AT_RISK = "AT_RISK"
+        OVERDUE = "OVERDUE"
+        COMPLETED = "COMPLETED"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="delegation_follow_ups")
+    delegated_to = models.CharField(max_length=128)
+    delegated_by = models.CharField(max_length=128, default="ceo")
+    title = models.CharField(max_length=240)
+    due_at = models.DateTimeField()
+    status = models.CharField(max_length=24, choices=Status.choices, default=Status.PENDING)
+    nudge_count = models.PositiveIntegerField(default=0)
+    last_nudged_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["due_at", "-created_at"]
+
+    def clean(self) -> None:
+        if not self.title or not self.title.strip():
+            raise ValidationError({"title": "Title cannot be empty."})
+        if not self.delegated_to or not self.delegated_to.strip():
+            raise ValidationError({"delegated_to": "Delegated to cannot be empty."})
+        if self.status not in self.Status.values:
+            raise ValidationError({"status": "Status must be valid."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        self.title = self.title.strip()
+        self.delegated_to = self.delegated_to.strip()
+        self.delegated_by = self.delegated_by.strip() or "ceo"
+        self.notes = self.notes.strip()
+        super().save(*args, **kwargs)
+

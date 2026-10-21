@@ -11,12 +11,17 @@ from core.views import (
     weekly_review_api,
     weekly_review_page,
 )
-from executive_assistant.views import executive_assistant_dashboard, executive_brief_detail
+from executive_assistant.views import (
+    executive_assistant_dashboard,
+    executive_brief_detail,
+    morning_brief_page_view,
+)
 from finance.views import finance_dashboard
 from governance.views import approval_detail, approval_inbox, audit_list, outbox_dashboard, outbox_dead_letter, outbox_list, outbox_retry, rule_activate, rule_activation_request, rule_event, rule_proposal, rule_test, rule_validate, rules_engine_dashboard, rules_engine_dry_run, rules_engine_run_detail, rules_engine_runs_list, rules_engine_work_item_update, rules_engine_work_items_list
 from mailbox.views import inbox_dashboard
 from operations.views import agent_invoke, agent_performance_detail, agents_list, plan_detail, plans_collection
 from portfolio.views import objectives_list
+from product.views import product_dashboard_rendered_view
 
 
 urlpatterns = [
@@ -31,7 +36,9 @@ urlpatterns = [
     path("finance/", finance_dashboard, name="finance-dashboard"),
     path("inbox/", inbox_dashboard, name="inbox-dashboard"),
     path("executive-assistant/", executive_assistant_dashboard, name="executive-assistant-dashboard"),
+    path("executive-assistant/morning-brief/", morning_brief_page_view, name="executive-assistant-morning-brief"),
     path("executive-assistant/briefs/<uuid:brief_id>/", executive_brief_detail, name="executive-brief-detail"),
+    path("product/", product_dashboard_rendered_view, name="product-dashboard"),
     path("api/v1/cos/", include("core.urls")),
     path("api/v1/developer/", include("developer.urls")),
     path("api/v1/history/search/", history_search, name="history-search"),

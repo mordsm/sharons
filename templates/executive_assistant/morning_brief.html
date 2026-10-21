@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+
+{% block title %}CEO Morning Brief - Sharons Executive Assistant{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+  <div>
+    <h1 style="margin: 0;">☀️ CEO Morning Briefing</h1>
+    <div class="meta">{{ today|date:"l, F d, Y" }} &bull; Prepared by Executive Assistant</div>
+  </div>
+  <div>
+    <a href="/executive-assistant/" style="margin-right: 12px; text-decoration: none;">&larr; Assistant Dashboard</a>
+    <a href="/review/weekly/decision-bundle/" style="display: inline-block; padding: 10px 16px; background: #0f766e; color: white; border-radius: 4px; text-decoration: none; font-weight: bold;">
+      📊 Weekly Decision Bundle &rarr;
+    </a>
+  </div>
+</div>
+
+<!-- Executive Summary Panel -->
+<div class="panel" style="border-left: 5px solid #1f5fa8; background: #fdfdfe;">
+  <h2 style="margin-top: 0;">Executive Daily Digest</h2>
+  <div style="font-size: 15px; line-height: 1.6; white-space: pre-line;">{{ brief.summary }}</div>
+</div>
+
+<!-- 4 Top Metrics -->
+<div class="metric-grid">
+  <div class="metric">
+    <span>{{ brief.agenda_items|length }}</span>
+    <strong>Today's Events</strong>
+  </div>
+  <div class="metric" {% if conflicts %}style="border-color: #e11d48; background: #fff1f2;"{% endif %}>
+    <span {% if conflicts %}style="color: #be123c;"{% endif %}>{{ conflicts|length }}</span>
+    <strong>Schedule Conflicts</strong>
+  </div>
+  <div class="metric">
+    <span style="color: #b45309;">{{ brief.decisions_needed|length }}</span>
+    <strong>Decisions Awaiting CEO</strong>
+  </div>
+  <div class="metric" {% if delegations.overdue_count > 0 %}style="border-color: #e11d48; background: #fff1f2;"{% endif %}>
+    <span {% if delegations.overdue_count > 0 %}style="color: #be123c;"{% endif %}>{{ delegations.overdue_count }}</span>
+    <strong>Overdue Delegations</strong>
+  </div>
+</div>
+
+<!-- 1. Today's Calendar & Conflict Alerts -->
+<div class="panel">
+  <h2>1. Today's Calendar Schedule</h2>
+  {% if conflicts %}
+    <div class="error" style="margin-bottom: 16px;">
+      <strong>⚠️ Schedule Conflicts Detected:</strong>
+      <ul style="margin: 8px 0 0 16px; padding: 0;">
+        {% for c in conflicts %}
+          <li>{{ c.description }} <em>(Severity: {{ c.severity }})</em></li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if brief.agenda_items %}
+    <table>
+      <thead>
+        <tr>
+          <th>Time Slot</th>
+          <th>Meeting / Event</th>
+          <th>Location / Link</th>
+          <th>Organizer</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in brief.agenda_items %}
+          <tr {% if item.has_conflict %}style="background: #fff5f5;"{% endif %}>
+            <td style="font-weight: bold; width: 140px;">{{ item.time }}</td>
+            <td>
+              {{ item.title }}
+              {% if item.has_conflict %}
+                <span style="color: #dc2626; font-size: 12px; font-weight: bold; margin-left: 6px;">[CONFLICT]</span>
+              {% endif %}
+            </td>
+            <td>{{ item.location }}</td>
+            <td class="meta">{{ item.organizer|default:"Self" }}</td>
+            <td>
+              {% if item.has_conflict %}
+                <span style="color: #dc2626; font-weight: bold;">Action Required</span>
+              {% else %}
+                <span style="color: #16a34a; font-weight: bold;">Confirmed</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="meta">No calendar events scheduled for today. Deep work time preserved.</p>
+  {% endif %}
+</div>
+
+<!-- 2. Priority Inbox & Executive Email Drafts -->
+<div class="panel">
+  <h2>2. Urgent Inbox Items & Triage</h2>
+  {% if brief.urgent_inbox %}
+    <table>
+      <thead>
+        <tr>
+          <th>Urgency</th>
+          <th>Category</th>
+          <th>Sender</th>
+          <th>Subject & Preview</th>
+          <th>Recommended Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for email in brief.urgent_inbox %}
+          <tr>
+            <td>
+              {% if email.urgency == "HIGH" %}
+                <span style="color: #dc2626; font-weight: bold;">🔴 HIGH</span>
+              {% elif email.urgency == "MEDIUM" %}
+                <span style="color: #d97706; font-weight: bold;">🟡 MEDIUM</span>
+              {% else %}
+                <span style="color: #4b5563;">⚪ LOW</span>
+              {% endif %}
+            </td>
+            <td><code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">{{ email.category }}</code></td>
+            <td class="meta">{{ email.sender }}</td>
+            <td>
+              <strong>{{ email.subject }}</strong>
+              <div class="meta" style="margin-top: 4px;">{{ email.preview }}</div>
+            </td>
+            <td style="font-weight: bold;">{{ email.recommended_action }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="meta">Inbox zero for high-urgency items. No urgent communications pending.</p>
+  {% endif %}
+</div>
+
+<!-- 3. Delegations & Follow-Up Tracker -->
+<div class="panel">
+  <h2>3. Delegated Tasks & SLA Follow-Up</h2>
+  {% if delegations.overdue or delegations.at_risk or delegations.on_track %}
+    <table>
+      <thead>
+        <tr>
+          <th>Task Title</th>
+          <th>Assignee</th>
+          <th>SLA Due Date</th>
+          <th>Status</th>
+          <th>Nudges</th>
+          <th>Notes / Follow-Up</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in delegations.overdue %}
+          <tr style="background: #fff1f2;">
+            <td><strong>{{ d.title }}</strong></td>
+            <td><code>{{ d.delegated_to }}</code></td>
+            <td style="color: #dc2626; font-weight: bold;">{{ d.due_at }}</td>
+            <td><span style="color: #dc2626; font-weight: bold;">OVERDUE</span></td>
+            <td>{{ d.nudge_count }}</td>
+            <td class="meta">{{ d.notes|default:"-" }}</td>
+          </tr>
+        {% endfor %}
+        {% for d in delegations.at_risk %}
+          <tr style="background: #fffbeb;">
+            <td><strong>{{ d.title }}</strong></td>
+            <td><code>{{ d.delegated_to }}</code></td>
+            <td style="color: #d97706; font-weight: bold;">{{ d.due_at }}</td>
+            <td><span style="color: #d97706; font-weight: bold;">AT RISK (&lt;24h)</span></td>
+            <td>{{ d.nudge_count }}</td>
+            <td class="meta">{{ d.notes|default:"-" }}</td>
+          </tr>
+        {% endfor %}
+        {% for d in delegations.on_track %}
+          <tr>
+            <td>{{ d.title }}</td>
+            <td><code>{{ d.delegated_to }}</code></td>
+            <td>{{ d.due_at }}</td>
+            <td><span style="color: #16a34a; font-weight: bold;">ON TRACK</span></td>
+            <td>{{ d.nudge_count }}</td>
+            <td class="meta">{{ d.notes|default:"-" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="meta">No active task delegations recorded.</p>
+  {% endif %}
+</div>
+
+<!-- 4. Governance Approvals Queue -->
+<div class="panel">
+  <h2>4. Urgent Decisions Requiring Signoff</h2>
+  {% if brief.decisions_needed %}
+    <table>
+      <thead>
+        <tr>
+          <th>Action</th>
+          <th>Requested By</th>
+          <th>Expires At</th>
+          <th>Action Link</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dec in brief.decisions_needed %}
+          <tr>
+            <td><code>{{ dec.action }}</code></td>
+            <td>{{ dec.requested_by }}</td>
+            <td>{{ dec.expires_at }}</td>
+            <td>
+              <a href="/review/weekly/decision-bundle/" style="font-weight: bold;">Decide in Weekly Bundle &rarr;</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="meta">All operational decisions are up to date. Zero pending approvals.</p>
+  {% endif %}
+</div>
+{% endblock %}
+

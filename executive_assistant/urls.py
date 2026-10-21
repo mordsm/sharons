@@ -27,6 +27,15 @@ from executive_assistant.views import (
     executive_task_proposal_detail,
     executive_task_proposal_review,
     executive_task_proposals_list,
+    calendar_conflicts_api,
+    calendar_reschedule_proposal_api,
+    email_triage_api,
+    email_draft_and_request_approval_api,
+    morning_brief_api,
+    delegations_report_api,
+    delegation_create_api,
+    delegation_nudge_api,
+    morning_brief_page_view,
 )
 
 
@@ -57,4 +66,14 @@ urlpatterns = [
     path("task-proposals/", executive_task_proposals_list, name="executive-task-proposals-list"),
     path("task-proposals/<uuid:proposal_id>/", executive_task_proposal_detail, name="executive-task-proposal-detail"),
     path("task-proposals/<uuid:proposal_id>/review/", executive_task_proposal_review, name="executive-task-proposal-review"),
+    # Advanced EA Operational Endpoints
+    path("calendar/conflicts/", calendar_conflicts_api, name="executive-calendar-conflicts"),
+    path("calendar/reschedule-proposal/", calendar_reschedule_proposal_api, name="executive-calendar-reschedule-proposal"),
+    path("email/triage/", email_triage_api, name="executive-email-triage"),
+    path("email/draft/", email_draft_and_request_approval_api, name="executive-email-draft-action"),
+    path("brief/morning/", morning_brief_api, name="executive-morning-brief"),
+    path("brief/morning-page/", morning_brief_page_view, name="executive-morning-brief-page"),
+    path("delegations/", delegations_report_api, name="executive-delegations-report"),
+    path("delegations/create/", delegation_create_api, name="executive-delegation-create"),
+    path("delegations/<uuid:delegation_id>/nudge/", delegation_nudge_api, name="executive-delegation-nudge"),
 ]
