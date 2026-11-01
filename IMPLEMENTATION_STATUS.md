@@ -1,6 +1,7 @@
 # Implementation Status
 
 ## Last Completed
+- Marketing phase 2 records a content calendar, an experiment register, and a claims review. Calendar acknowledgement does not publish or send. Experiments cannot spend or store a significance claim. A claim stays unsupported until an evidence note is supplied.
 - The marketing agent is operative. It is seeded, the runner is on, and one assigned Mental Trainer task completed a draft run with publishing and spending off. The task remains `DELIVERED_UNVERIFIED` until a person verifies it.
 - Mental Trainer launch review is on the weekly report. It lists what to approve or hold, that no O1 task is blocked, and the open offer, price, and payment questions. A 30-day Israel marketing draft does not publish or spend. The task `Record the Mental Trainer launch decision list` is `COMPLETED` with verified evidence.
 - Marketing Manager is a draft-only agent. It creates strategy, audience, positioning, campaign brief, and decision-bundle artifacts, reviews them by version, and can hand a milestone proposal to Project Manager. Publishing, sending, CRM access, and ad spending stay off. Page: `/marketing/`.
@@ -27,19 +28,21 @@
 - Gmail refresh uses the Google token endpoint and keeps the new access token in memory for that fetch. Send and calendar scheduling stay off.
 - The agent runner does not send email, schedule events, create GitHub issues, or write to a repository.
 - Provider sync configs still cannot store OAuth tokens or secrets.
-- Local Postgres for this workspace is running through Docker with dynamic host-port mapping. Current `.env` points at the assigned port from `docker compose port postgres 5432` (currently `59239`).
+- Local Postgres for this workspace is running through Docker with dynamic host-port mapping. Current `.env` points at the assigned port from `docker compose port postgres 5432` (currently `63870`).
 
 ## Next Step
-- Marketing phase 2, when requested: content calendar, experiment register, and claims review workflow. Do not add publishing or ad spending.
 - A live GitHub issue still needs an approval bound to one exact payload. `SHARONS_GITHUB_TOKEN` is present. Do not create an issue until the title, body, and repository are chosen.
-- Remaining product feature from the current slice: pricing experiment briefs.
+- Read-only marketing analytics only after a scoped connector exists. Do not add publishing or ad spending.
 
 ## Blockers
 - Outlook and calendar still have no live credentials. Gmail refresh is configured for read-only fetch. Sending and scheduling stay off.
 - A GitHub issue is not created until a specific approval is executed.
-- Repository git status is noisy: many implementation files are untracked while old `projects/...` docs are marked deleted.
 
 ## Verification
+- `uv run pytest marketing\tests\test_marketing_api.py operations\tests\test_agent_runner.py -q` passed: 20 passed. This covers the content calendar, experiment register, and claims review.
+- Local Postgres was down. `docker compose up -d postgres` started it on `127.0.0.1:63870`, and `.env` was pointed at that port. `.env` is not committed.
+- `uv run python manage.py migrate` applied `marketing.0002_content_calendar_experiment_claims` and `product.0007_pricingexperimentbrief`.
+- Browser check of `http://127.0.0.1:8765/marketing/`: added a calendar draft, registered an experiment, registered a claim, and acknowledged that claim as unsupported. Publish, send, and spend stayed off.
 - `uv run python manage.py check` passed with no issues.
 - `uv run pytest core\tests\test_cos_objective_health_api.py product\tests\test_product_spec_contract_api.py executive_assistant\tests\test_executive_brief_api.py -q` was attempted and blocked during test database setup by PostgreSQL authentication failure.
 - After moving the project Postgres container to dynamic port mapping and updating `.env`, `uv run pytest core\tests\test_cos_objective_health_api.py product\tests\test_product_spec_contract_api.py executive_assistant\tests\test_executive_brief_api.py -q` passed: 94 passed.

@@ -5,7 +5,14 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from governance.models import AuditEvent
-from marketing.models import MarketingArtifact, MarketingRequest, MarketingReview
+from marketing.models import (
+    ContentCalendarItem,
+    MarketingArtifact,
+    MarketingClaim,
+    MarketingExperiment,
+    MarketingRequest,
+    MarketingReview,
+)
 from portfolio.models import Objective, Project
 from product.models import ProductSpecContract
 
@@ -64,6 +71,9 @@ def marketing_status() -> dict:
         "request_count": MarketingRequest.objects.count(),
         "artifact_count": MarketingArtifact.objects.count(),
         "pending_reviews": MarketingArtifact.objects.filter(status=MarketingArtifact.Status.DRAFT).count(),
+        "calendar_count": ContentCalendarItem.objects.count(),
+        "experiment_count": MarketingExperiment.objects.count(),
+        "claims_needing_review": MarketingClaim.objects.filter(review_status=MarketingClaim.ReviewStatus.NEEDS_REVIEW).count(),
         "external_action_enabled": False,
     }
 
@@ -271,6 +281,158 @@ def review_artifact(payload: dict, *, artifact_id: str, actor_id: str, correlati
     return artifact
 
 
+def create_calendar_item(payload: dict, *, request_id: str, actor_id: str, correlation_id: str) -> ContentCalendarItem:
+    _reject_external_flags(payload, publish=True, send=True, spend=False)
+    title = _required_text(payload.get("title"), "title")
+    body = _required_text(payload.get("body"), "body")
+    channel = str(payload.get("channel", "")).strip().upper()
+    if channel not in ContentCalendarItem.Channel.values:
+        raise InvalidMarketingPayloadError("channel must be LANDING_DRAFT, EMAIL_DRAFT, or SOCIAL_DRAFT.")
+    planned_on = _planned_on(payload.get("planned_on"))
+    actor = actor_id.strip() or "api"
+    correlation = correlation_id.strip()
+    if not correlation:
+        raise InvalidMarketingPayloadError("correlation_id is required.")
+    with transaction.atomic():
+        marketing_request = MarketingRequest.objects.select_for_update().get(id=request_id)
+        item = ContentCalendarItem.objects.create(
+            request=marketing_request,
+            title=title,
+            channel=channel,
+            planned_on=planned_on,
+            body=body,
+            created_by=actor,
+            correlation_id=correlation,
+        )
+        _audit("marketing.calendar_item_created", item, actor, correlation, {"channel": channel, "will_publish": False, "will_send": False})
+    return item
+
+
+def review_calendar_item(payload: dict, *, item_id: str, actor_id: str, correlation_id: str) -> ContentCalendarItem:
+    _reject_external_flags(payload, publish=True, send=True, spend=False)
+    decision = str(payload.get("decision", "")).strip().upper()
+    if decision not in {ContentCalendarItem.Status.ACKNOWLEDGED, ContentCalendarItem.Status.REJECTED}:
+        raise InvalidMarketingPayloadError("decision must be ACKNOWLEDGED or REJECTED.")
+    actor = actor_id.strip() or "api"
+    with transaction.atomic():
+        item = ContentCalendarItem.objects.select_for_update().get(id=item_id)
+        if item.status != ContentCalendarItem.Status.DRAFT:
+            raise MarketingBlockedError("This calendar item was already reviewed.")
+        item.status = decision
+        item.save(update_fields=["status", "title", "body", "created_by", "correlation_id", "will_publish", "will_send"])
+        _audit("marketing.calendar_item_reviewed", item, actor, correlation_id, {"decision": decision, "will_publish": False, "will_send": False})
+    return item
+
+
+def create_experiment(payload: dict, *, request_id: str, actor_id: str, correlation_id: str) -> MarketingExperiment:
+    _reject_external_flags(payload, publish=False, send=False, spend=True)
+    _reject_significance(payload)
+    hypothesis = _required_text(payload.get("hypothesis"), "hypothesis")
+    metric = _required_text(payload.get("metric"), "metric")
+    notes = str(payload.get("notes", "")).strip()
+    sample_size = _optional_sample_size(payload.get("sample_size"))
+    actor = actor_id.strip() or "api"
+    correlation = correlation_id.strip()
+    if not correlation:
+        raise InvalidMarketingPayloadError("correlation_id is required.")
+    with transaction.atomic():
+        marketing_request = MarketingRequest.objects.select_for_update().get(id=request_id)
+        experiment = MarketingExperiment.objects.create(
+            request=marketing_request,
+            hypothesis=hypothesis,
+            metric=metric,
+            notes=notes,
+            sample_size=sample_size,
+            created_by=actor,
+            correlation_id=correlation,
+        )
+        _audit(
+            "marketing.experiment_registered",
+            experiment,
+            actor,
+            correlation,
+            {"will_spend": False, "significance_claimed": False},
+        )
+    return experiment
+
+
+def review_experiment(payload: dict, *, experiment_id: str, actor_id: str, correlation_id: str) -> MarketingExperiment:
+    _reject_external_flags(payload, publish=False, send=False, spend=True)
+    _reject_significance(payload)
+    decision = str(payload.get("decision", "")).strip().upper()
+    if decision not in {MarketingExperiment.Status.ACKNOWLEDGED, MarketingExperiment.Status.REJECTED}:
+        raise InvalidMarketingPayloadError("decision must be ACKNOWLEDGED or REJECTED.")
+    actor = actor_id.strip() or "api"
+    with transaction.atomic():
+        experiment = MarketingExperiment.objects.select_for_update().get(id=experiment_id)
+        if experiment.status != MarketingExperiment.Status.PROPOSED:
+            raise MarketingBlockedError("This experiment was already reviewed.")
+        experiment.status = decision
+        experiment.save(update_fields=["status", "hypothesis", "metric", "notes", "created_by", "correlation_id", "will_spend", "significance_claimed"])
+        _audit("marketing.experiment_reviewed", experiment, actor, correlation_id, {"decision": decision, "will_spend": False})
+    return experiment
+
+
+def create_claim(payload: dict, *, request_id: str, actor_id: str, correlation_id: str) -> MarketingClaim:
+    text = _required_text(payload.get("text"), "text")
+    _reject_claim_instruction(text, actor_id, correlation_id)
+    evidence_note = str(payload.get("evidence_note", "")).strip()
+    supported = bool(payload.get("supported", False))
+    if supported and not evidence_note:
+        raise MarketingBlockedError("A claim cannot be marked supported without an evidence note.")
+    actor = actor_id.strip() or "api"
+    correlation = correlation_id.strip()
+    if not correlation:
+        raise InvalidMarketingPayloadError("correlation_id is required.")
+    with transaction.atomic():
+        marketing_request = MarketingRequest.objects.select_for_update().get(id=request_id)
+        claim = MarketingClaim.objects.create(
+            request=marketing_request,
+            text=text,
+            evidence_note=evidence_note,
+            supported=supported,
+            created_by=actor,
+            correlation_id=correlation,
+        )
+        _audit("marketing.claim_registered", claim, actor, correlation, {"supported": claim.supported})
+    return claim
+
+
+def review_claim(payload: dict, *, claim_id: str, actor_id: str, correlation_id: str) -> MarketingClaim:
+    decision = str(payload.get("decision", "")).strip().upper()
+    if decision not in {"ACCEPT", "ACKNOWLEDGE_UNSUPPORTED", "REJECT"}:
+        raise InvalidMarketingPayloadError("decision must be ACCEPT, ACKNOWLEDGE_UNSUPPORTED, or REJECT.")
+    actor = actor_id.strip() or "api"
+    evidence_note = str(payload.get("evidence_note", "")).strip()
+    with transaction.atomic():
+        claim = MarketingClaim.objects.select_for_update().get(id=claim_id)
+        if claim.review_status != MarketingClaim.ReviewStatus.NEEDS_REVIEW:
+            raise MarketingBlockedError("This claim was already reviewed.")
+        if decision == "ACCEPT":
+            note = evidence_note or claim.evidence_note
+            if not note:
+                raise MarketingBlockedError("A claim cannot be accepted without an evidence note.")
+            claim.evidence_note = note
+            claim.supported = True
+            claim.review_status = MarketingClaim.ReviewStatus.ACCEPTED
+        elif decision == "ACKNOWLEDGE_UNSUPPORTED":
+            if not payload.get("acknowledge_unsupported"):
+                raise MarketingBlockedError("Unsupported claims must be explicitly acknowledged.")
+            claim.supported = False
+            claim.review_status = MarketingClaim.ReviewStatus.ACKNOWLEDGED_UNSUPPORTED
+        else:
+            claim.review_status = MarketingClaim.ReviewStatus.REJECTED
+        claim.save()
+        _audit(
+            "marketing.claim_reviewed",
+            claim,
+            actor,
+            correlation_id,
+            {"decision": decision, "supported": claim.supported, "review_status": claim.review_status},
+        )
+    return claim
+
+
 def revise_artifact(payload: dict, *, artifact_id: str, actor_id: str, correlation_id: str) -> MarketingArtifact:
     summary = str(payload.get("summary", "")).strip()
     content = payload.get("content")
@@ -395,6 +557,51 @@ def serialize_request(marketing_request: MarketingRequest) -> dict:
         "correlation_id": marketing_request.correlation_id,
         "created_at": marketing_request.created_at.isoformat(),
         "artifacts": [serialize_artifact(artifact) for artifact in marketing_request.artifacts.all()],
+        "calendar_items": [serialize_calendar_item(item) for item in marketing_request.calendar_items.all()],
+        "experiments": [serialize_experiment(item) for item in marketing_request.experiments.all()],
+        "claims_register": [serialize_claim(item) for item in marketing_request.claims.all()],
+    }
+
+
+def serialize_calendar_item(item: ContentCalendarItem) -> dict:
+    return {
+        "id": str(item.id),
+        "request_id": str(item.request_id),
+        "title": item.title,
+        "channel": item.channel,
+        "planned_on": item.planned_on.isoformat(),
+        "body": item.body,
+        "status": item.status,
+        "will_publish": False,
+        "will_send": False,
+        "created_at": item.created_at.isoformat(),
+    }
+
+
+def serialize_experiment(experiment: MarketingExperiment) -> dict:
+    return {
+        "id": str(experiment.id),
+        "request_id": str(experiment.request_id),
+        "hypothesis": experiment.hypothesis,
+        "metric": experiment.metric,
+        "notes": experiment.notes,
+        "sample_size": experiment.sample_size,
+        "status": experiment.status,
+        "will_spend": False,
+        "significance_claimed": False,
+        "created_at": experiment.created_at.isoformat(),
+    }
+
+
+def serialize_claim(claim: MarketingClaim) -> dict:
+    return {
+        "id": str(claim.id),
+        "request_id": str(claim.request_id),
+        "text": claim.text,
+        "evidence_note": claim.evidence_note,
+        "supported": claim.supported,
+        "review_status": claim.review_status,
+        "created_at": claim.created_at.isoformat(),
     }
 
 
@@ -710,6 +917,67 @@ def _number(value):
 def _positive_number(value) -> bool:
     number = _number(value)
     return number is not None and number > 0
+
+
+def _required_text(value, field: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise InvalidMarketingPayloadError(f"{field} is required.")
+    return text
+
+
+def _planned_on(value):
+    text = str(value or "").strip()
+    if not text:
+        raise InvalidMarketingPayloadError("planned_on is required.")
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        raise InvalidMarketingPayloadError("planned_on must be a YYYY-MM-DD date.")
+
+
+def _reject_external_flags(payload: dict, *, publish: bool, send: bool, spend: bool) -> None:
+    if publish and (payload.get("will_publish") is True or payload.get("publish") is True):
+        raise MarketingBlockedError("A content calendar item cannot publish.")
+    if send and (payload.get("will_send") is True or payload.get("send") is True):
+        raise MarketingBlockedError("A content calendar item cannot send.")
+    if spend and (payload.get("will_spend") is True or payload.get("spend") is True or payload.get("ad_spend_enabled") is True):
+        raise MarketingBlockedError("An experiment register entry cannot spend.")
+
+
+def _reject_significance(payload: dict) -> None:
+    if payload.get("significance_claimed") is True or payload.get("claim_significance") is True or payload.get("statistically_significant") is True:
+        raise MarketingBlockedError("An experiment register entry cannot claim statistical significance.")
+    if payload.get("p_value") not in (None, ""):
+        raise MarketingBlockedError("An experiment register entry cannot store a p-value.")
+
+
+def _optional_sample_size(value):
+    if value in (None, ""):
+        return None
+    number = _number(value)
+    if number is None or number != int(number) or number <= 0:
+        raise InvalidMarketingPayloadError("sample_size must be a positive integer when supplied.")
+    return int(number)
+
+
+def _reject_claim_instruction(text: str, actor_id: str, correlation_id: str) -> None:
+    lowered = text.lower()
+    if any(marker in lowered for marker in INJECTION_MARKERS):
+        _audit_unscoped(actor_id, correlation_id, "marketing.untrusted_claim_ignored")
+        raise MarketingBlockedError("Untrusted instructions cannot be stored as a marketing claim.")
+
+
+def _audit_unscoped(actor: str, correlation_id: str, action: str) -> None:
+    AuditEvent.objects.create(
+        actor_type=AuditEvent.ActorType.AGENT,
+        actor_id=actor.strip() or "api",
+        action=action,
+        object_type="marketing.MarketingClaim",
+        object_id="",
+        correlation_id=correlation_id.strip(),
+        metadata={"external_action": False},
+    )
 
 
 def _audit(action: str, obj, actor: str, correlation_id: str, metadata: dict) -> None:

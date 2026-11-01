@@ -13,6 +13,9 @@ Draft-only marketing plans inside Sharons.
 - `POST /api/v1/marketing/performance/analyze/` uses only a supplied snapshot.
 - Page: `/marketing/`.
 - An active objective can receive one Project Manager milestone proposal. The proposal does not execute the campaign.
+- A content calendar stores draft titles, channel labels, and planned dates. Acknowledging an item does not publish or send it.
+- An experiment register stores a hypothesis and a metric. It does not spend and it does not claim statistical significance.
+- A claims register stays unsupported until a person supplies an evidence note. Acknowledging an unsupported claim does not mark it supported.
 
 ## Boundaries
 
@@ -23,6 +26,5 @@ Draft-only marketing plans inside Sharons.
 
 ## Later
 
-- Content calendar and experiment register.
 - Read-only analytics only after a scoped connector exists.
-- No channel publishing in that later step unless a separate approval adapter is added.
+- No channel publishing unless a separate approval adapter is added.
