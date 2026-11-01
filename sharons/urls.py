@@ -19,9 +19,11 @@ from executive_assistant.views import (
 from finance.views import finance_dashboard
 from governance.views import approval_detail, approval_inbox, audit_list, outbox_dashboard, outbox_dead_letter, outbox_list, outbox_retry, rule_activate, rule_activation_request, rule_event, rule_proposal, rule_test, rule_validate, rules_engine_dashboard, rules_engine_dry_run, rules_engine_run_detail, rules_engine_runs_list, rules_engine_work_item_update, rules_engine_work_items_list
 from mailbox.views import inbox_dashboard
-from operations.views import agent_invoke, agent_performance_detail, agents_list, plan_detail, plans_collection
+from operations.views import agent_execute, agent_invoke, agent_performance_detail, agents_list, plan_detail, plans_collection
 from portfolio.views import objectives_list
 from product.views import product_dashboard_rendered_view
+from marketing.views import marketing_dashboard
+from project_manager.views import project_manager_dashboard
 
 
 urlpatterns = [
@@ -39,6 +41,8 @@ urlpatterns = [
     path("executive-assistant/morning-brief/", morning_brief_page_view, name="executive-assistant-morning-brief"),
     path("executive-assistant/briefs/<uuid:brief_id>/", executive_brief_detail, name="executive-brief-detail"),
     path("product/", product_dashboard_rendered_view, name="product-dashboard"),
+    path("project-manager/", project_manager_dashboard, name="project-manager-dashboard"),
+    path("marketing/", marketing_dashboard, name="marketing-dashboard"),
     path("api/v1/cos/", include("core.urls")),
     path("api/v1/developer/", include("developer.urls")),
     path("api/v1/history/search/", history_search, name="history-search"),
@@ -48,11 +52,13 @@ urlpatterns = [
     path("api/v1/memory/", memory_create, name="memory-create"),
     path("api/v1/reports/weekly/", weekly_review_api, name="weekly-review-api"),
     path("api/v1/agents/invoke/", agent_invoke, name="agent-invoke"),
+    path("api/v1/agents/execute/", agent_execute, name="agent-execute"),
     path("api/v1/agents/<str:agent_id>/performance/", agent_performance_detail, name="agent-performance"),
     path("api/v1/agents/", agents_list, name="agents-list"),
     path("api/v1/plans/", plans_collection, name="plans-collection"),
     path("api/v1/plans/<uuid:plan_id>/", plan_detail, name="plan-detail"),
     path("api/v1/approvals/", include("governance.urls")),
+    path("api/v1/secrets/", include("governance.secret_urls")),
     path("api/v1/rules/proposals/", rule_proposal, name="rule-proposal"),
     path("api/v1/rules/events/", rule_event, name="rule-event"),
     path("api/v1/rules-engine/dry-run/", rules_engine_dry_run, name="rules-engine-dry-run"),
@@ -71,6 +77,7 @@ urlpatterns = [
     path("api/v1/objectives/", objectives_list, name="objectives-list"),
     path("api/v1/finance/", include("finance.urls")),
     path("api/v1/mailbox/", include("mailbox.urls")),
+    path("api/v1/marketing/", include("marketing.urls")),
     path("api/v1/payments/", include("payments.urls")),
     path("api/v1/product/", include("product.urls")),
     path("api/v1/project-manager/", include("project_manager.urls")),

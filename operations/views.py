@@ -11,6 +11,7 @@ from core.models import IdempotencyRecord
 from core.services import canonical_hash
 from operations.forms import TaskAssignForm, TaskEvidenceForm, TaskTransitionForm, TaskVerifyForm
 from operations.models import AgentDefinition, Plan, Task
+from operations.runner import AgentRunnerError, execute_assigned_agent
 from operations.services import (
     AgentInvokeBlockedError,
     AgentInvokeError,
@@ -360,6 +361,36 @@ def agent_invoke(request):
         return error_response(exc.code, str(exc), 409)
     except AgentInvokeError as exc:
         return error_response(exc.code, str(exc), 400)
+
+
+@csrf_exempt
+@require_POST
+def agent_execute(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise InvalidAgentInvokePayloadError("Request body must be a JSON object.")
+        idempotency_key, correlation_id, actor_id = change_headers(request, InvalidAgentInvokePayloadError)
+        request_hash = canonical_hash({"path": request.path, "payload": payload})
+        existing = IdempotencyRecord.objects.filter(key=idempotency_key).first()
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        agent_run = execute_assigned_agent(payload, actor_id=actor_id, correlation_id=correlation_id)
+        response = {"agent_run": serialize_agent_run(agent_run), "correlation_id": correlation_id, "external_action": False}
+        IdempotencyRecord.objects.create(key=idempotency_key, request_hash=request_hash, response_payload=response, status_code=200)
+        return JsonResponse(response, status=200)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except (Task.DoesNotExist, AgentDefinition.DoesNotExist):
+        return error_response("AGENT_OR_TASK_NOT_FOUND", "Agent or task was not found.", 404)
+    except InvalidAgentInvokePayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except AgentInvokeBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+    except AgentRunnerError as exc:
+        return error_response(exc.code, str(exc), 409)
 
 
 @csrf_exempt

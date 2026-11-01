@@ -70,6 +70,8 @@ class BlockerReview(models.Model):
     blocker_summary = models.TextField()
     recommended_action = models.CharField(max_length=64)
     escalation_required = models.BooleanField(default=False)
+    follow_up_task = models.ForeignKey(Task, on_delete=models.PROTECT, null=True, blank=True, related_name="blocker_follow_ups")
+    approval_request_id = models.UUIDField(null=True, blank=True)
     no_external_action = models.BooleanField(default=True)
     created_by = models.CharField(max_length=128)
     created_at = models.DateTimeField(auto_now_add=True)

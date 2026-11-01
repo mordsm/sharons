@@ -921,6 +921,60 @@ def serialize_approval_summary(approval: ApprovalRequest) -> dict:
     }
 
 
+def launch_decision_list() -> dict:
+    from marketing.models import MarketingRequest
+    from product.models import UserResearchQuestion
+
+    objective = Objective.objects.filter(code="O1", status=Objective.Status.ACTIVE).first()
+    approve: list[dict[str, str]] = []
+    blocked: list[dict[str, str]] = []
+    assumptions: list[dict[str, str]] = []
+    if objective is None:
+        return {"objective_code": None, "objective_name": "", "approve": approve, "blocked": [{"text": "O1 is not an active objective.", "source": "objective"}], "assumptions": assumptions}
+
+    for proposal in MilestoneProposal.objects.filter(objective=objective, status=MilestoneProposal.Status.PROPOSED).order_by("created_at")[:8]:
+        approve.append({"text": proposal.title, "source": "project_manager"})
+    for task in Task.objects.filter(objective=objective, status=Task.Status.BLOCKED).order_by("-updated_at")[:8]:
+        blocked.append({"text": task.title, "source": "task"})
+    for marketing_request in MarketingRequest.objects.filter(objective_record=objective).order_by("-created_at")[:3]:
+        approve.append({"text": marketing_request.summary, "source": "marketing"})
+        for item in marketing_request.assumptions:
+            assumptions.append({"text": str(item), "source": "marketing"})
+        if marketing_request.status == MarketingRequest.Status.BLOCKED_DEPENDENCY:
+            blocked.append({"text": marketing_request.summary, "source": "marketing"})
+
+    questions = list(
+        UserResearchQuestion.objects.filter(
+            contract__spec_contract__project__slug="mental-skills-playground",
+            status=UserResearchQuestion.Status.OPEN,
+        ).order_by("created_at")[:8]
+    )
+    question_text = [question.question for question in questions]
+    if not question_text:
+        spec = (
+            ProductSpecContract.objects.filter(project__slug="mental-skills-playground")
+            .exclude(status=ProductSpecContract.Status.CANCELLED)
+            .order_by("-created_at")
+            .first()
+        )
+        if spec:
+            for item in spec.open_questions:
+                text = item if isinstance(item, str) else str(item.get("text", "")).strip()
+                if text:
+                    question_text.append(text)
+    if question_text:
+        approve.append({"text": "Decide the first beta offer, price, and payment provider before any launch claim.", "source": "product"})
+        for text in question_text:
+            assumptions.append({"text": text, "source": "product"})
+    return {
+        "objective_code": objective.code,
+        "objective_name": objective.name,
+        "approve": approve,
+        "blocked": blocked,
+        "assumptions": assumptions,
+    }
+
+
 def weekly_review() -> dict:
     now = timezone.now()
     active_objectives = Objective.objects.filter(status=Objective.Status.ACTIVE).order_by("code")
@@ -973,6 +1027,7 @@ def weekly_review() -> dict:
         "recent_audit_events": list(recent_audit_events),
         "risks": risks,
         "next_actions": next_actions,
+        "launch_decisions": launch_decision_list(),
     }
 
 
@@ -998,6 +1053,7 @@ def serialize_weekly_review(review: dict) -> dict:
         "completed_tasks": [serialize_task_summary(task) for task in review["completed_tasks"]],
         "risks": review["risks"],
         "next_actions": review["next_actions"],
+        "launch_decisions": review["launch_decisions"],
     }
 
 

@@ -9,19 +9,52 @@ from django.views.decorators.http import require_GET, require_POST
 from core.models import IdempotencyRecord
 from core.services import canonical_hash
 from operations.models import Task
-from portfolio.models import Project, ProjectConnection
+from portfolio.models import Objective, Project, ProjectConnection
 from product.models import (
     ProductSpecContract,
     ProductSpecDraft,
     ProductMilestone,
     ProductFeature,
     ProductFeedback,
+    UserResearchContract,
+    UserResearchInterview,
+    UserResearchQuestion,
 )
 from product.pm_engine import (
     PrdAndUserStoryEngine,
     RicePrioritizationEngine,
     RoadmapAndMilestoneEngine,
     DiscoveryAndFeedbackEngine,
+)
+from product.github_issues import (
+    create_github_issue_request,
+    request_github_issue_approval,
+    serialize_github_issue_request,
+)
+from product.models import GithubIssueRequest
+from product.competitive import (
+    create_competitive_analysis,
+    review_competitive_analysis,
+    serialize_competitive_analysis,
+)
+from product.models import CompetitiveAnalysisDraft
+from product.pricing import (
+    create_pricing_experiment,
+    review_pricing_experiment,
+    serialize_pricing_experiment,
+)
+from product.models import PricingExperimentBrief
+from product.user_research import (
+    add_user_research_finding,
+    add_user_research_interview,
+    add_user_research_question,
+    create_user_research_contract,
+    list_user_research_contracts,
+    serialize_user_research_contract,
+    serialize_user_research_finding,
+    serialize_user_research_interview,
+    serialize_user_research_question,
+    update_user_research_question,
 )
 from product.services import (
     InvalidProductContractPayloadError,
@@ -45,6 +78,26 @@ from operations.services import serialize_task
 
 def error_response(code: str, message: str, status: int) -> JsonResponse:
     return JsonResponse({"error": {"code": code, "message": message}}, status=status)
+
+
+def begin_idempotent_post(request):
+    payload = json.loads(request.body.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise InvalidProductContractPayloadError("Request body must be a JSON object.")
+    idempotency_key, correlation_id, actor_id = change_headers(request)
+    request_hash = canonical_hash({"path": request.path, "payload": payload})
+    existing = IdempotencyRecord.objects.filter(key=idempotency_key).first()
+    return payload, idempotency_key, correlation_id, actor_id, request_hash, existing
+
+
+def store_idempotent_response(*, key: str, request_hash: str, response: dict, status_code: int) -> JsonResponse:
+    IdempotencyRecord.objects.create(
+        key=key,
+        request_hash=request_hash,
+        response_payload=response,
+        status_code=status_code,
+    )
+    return JsonResponse(response, status=status_code)
 
 
 def change_headers(request):
@@ -331,6 +384,7 @@ def milestone_create_api(request):
         target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
         description = payload.get("description", "")
         release_notes = payload.get("release_notes", "")
+        objective_id = payload.get("objective_id") or None
 
         milestone = RoadmapAndMilestoneEngine.create_milestone(
             project_id=project_id,
@@ -338,6 +392,7 @@ def milestone_create_api(request):
             target_date=target_date,
             description=description,
             release_notes=release_notes,
+            objective_id=objective_id,
         )
         return JsonResponse({
             "milestone": {
@@ -345,12 +400,17 @@ def milestone_create_api(request):
                 "name": milestone.name,
                 "target_date": milestone.target_date.isoformat(),
                 "status": milestone.status,
+                "objective_id": str(milestone.objective_id) if milestone.objective_id else None,
             }
         }, status=201)
     except json.JSONDecodeError:
         return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
     except Project.DoesNotExist:
         return error_response("PROJECT_NOT_FOUND", "Project was not found.", 404)
+    except Objective.DoesNotExist:
+        return error_response("OBJECTIVE_NOT_FOUND", "Active objective was not found.", 404)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
 
 
 @require_GET
@@ -414,6 +474,316 @@ def feedback_summary_api(request):
     project_id = request.GET.get("project_id", "").strip() or None
     summary = DiscoveryAndFeedbackEngine.get_feedback_summary(project_id=project_id)
     return JsonResponse(summary)
+
+
+@csrf_exempt
+@require_POST
+def milestone_objective_link(request, milestone_id):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        objective_id = str(payload.get("objective_id", "")).strip()
+        if not objective_id:
+            raise InvalidProductContractPayloadError("objective_id is required.")
+        milestone = RoadmapAndMilestoneEngine.link_objective(
+            milestone_id,
+            objective_id,
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+        )
+        response = {
+            "milestone": {
+                "id": str(milestone.id),
+                "project_id": str(milestone.project_id),
+                "objective_id": str(milestone.objective_id),
+                "objective_code": milestone.objective.code,
+                "name": milestone.name,
+                "no_external_write": True,
+            },
+            "correlation_id": correlation_id,
+        }
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=200)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except ProductMilestone.DoesNotExist:
+        return error_response("MILESTONE_NOT_FOUND", "Product milestone was not found.", 404)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except Objective.DoesNotExist:
+        return error_response("OBJECTIVE_NOT_FOUND", "Active objective was not found.", 404)
+
+
+@csrf_exempt
+@require_POST
+def user_research_contract_create(request, contract_id):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        contract = create_user_research_contract(payload, spec_contract_id=str(contract_id), actor_id=actor_id, correlation_id=correlation_id)
+        response = {"user_research_contract": serialize_user_research_contract(contract), "correlation_id": correlation_id}
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=201)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except ProductSpecContract.DoesNotExist:
+        return error_response("PRODUCT_CONTRACT_NOT_FOUND", "Product spec contract was not found.", 404)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+
+
+@require_GET
+def user_research_contract_list(request, contract_id):
+    if not ProductSpecContract.objects.filter(id=contract_id).exists():
+        return error_response("PRODUCT_CONTRACT_NOT_FOUND", "Product spec contract was not found.", 404)
+    contracts = list_user_research_contracts(spec_contract_id=str(contract_id))
+    return JsonResponse({
+        "user_research_contracts": [serialize_user_research_contract(contract) for contract in contracts],
+        "no_customer_contact": True,
+        "no_external_write": True,
+    })
+
+
+@csrf_exempt
+@require_POST
+def user_research_interview_create(request, research_id):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        interview = add_user_research_interview(payload, contract_id=str(research_id), actor_id=actor_id, correlation_id=correlation_id)
+        response = {"interview": serialize_user_research_interview(interview), "correlation_id": correlation_id, "no_customer_contact": True}
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=201)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except UserResearchContract.DoesNotExist:
+        return error_response("USER_RESEARCH_NOT_FOUND", "User research contract was not found.", 404)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+
+
+@csrf_exempt
+@require_POST
+def user_research_finding_create(request, research_id):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        finding = add_user_research_finding(payload, contract_id=str(research_id), actor_id=actor_id, correlation_id=correlation_id)
+        response = {"finding": serialize_user_research_finding(finding), "correlation_id": correlation_id, "no_customer_contact": True}
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=201)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except UserResearchContract.DoesNotExist:
+        return error_response("USER_RESEARCH_NOT_FOUND", "User research contract was not found.", 404)
+    except UserResearchInterview.DoesNotExist:
+        return error_response("USER_RESEARCH_INTERVIEW_NOT_FOUND", "Interview was not found on this research contract.", 404)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+
+
+@csrf_exempt
+@require_POST
+def user_research_question_create(request, research_id):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        question = add_user_research_question(payload, contract_id=str(research_id), actor_id=actor_id, correlation_id=correlation_id)
+        response = {"question": serialize_user_research_question(question), "correlation_id": correlation_id, "no_customer_contact": True}
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=201)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except UserResearchContract.DoesNotExist:
+        return error_response("USER_RESEARCH_NOT_FOUND", "User research contract was not found.", 404)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+
+
+@csrf_exempt
+@require_POST
+def user_research_question_update(request, question_id):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        question = update_user_research_question(payload, question_id=str(question_id), actor_id=actor_id, correlation_id=correlation_id)
+        response = {"question": serialize_user_research_question(question), "correlation_id": correlation_id, "no_customer_contact": True}
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=200)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except UserResearchQuestion.DoesNotExist:
+        return error_response("USER_RESEARCH_QUESTION_NOT_FOUND", "User research question was not found.", 404)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+
+
+@csrf_exempt
+@require_POST
+def competitive_analysis_create(request, contract_id):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        draft = create_competitive_analysis(payload, spec_contract_id=str(contract_id), actor_id=actor_id, correlation_id=correlation_id)
+        response = {"competitive_analysis": serialize_competitive_analysis(draft), "correlation_id": correlation_id}
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=201)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except ProductSpecContract.DoesNotExist:
+        return error_response("PRODUCT_CONTRACT_NOT_FOUND", "Product spec contract was not found.", 404)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+
+
+@csrf_exempt
+@require_POST
+def competitive_analysis_review(request, draft_id):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        draft = review_competitive_analysis(payload, draft_id=str(draft_id), actor_id=actor_id, correlation_id=correlation_id)
+        response = {"competitive_analysis": serialize_competitive_analysis(draft), "correlation_id": correlation_id}
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=200)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except CompetitiveAnalysisDraft.DoesNotExist:
+        return error_response("COMPETITIVE_ANALYSIS_NOT_FOUND", "Competitive analysis was not found.", 404)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+
+
+@csrf_exempt
+@require_POST
+def pricing_experiment_create(request, contract_id):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        brief = create_pricing_experiment(payload, spec_contract_id=str(contract_id), actor_id=actor_id, correlation_id=correlation_id)
+        response = {
+            "pricing_experiment": serialize_pricing_experiment(brief),
+            "correlation_id": correlation_id,
+            "no_payment": True,
+            "no_spend": True,
+        }
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=201)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except ProductSpecContract.DoesNotExist:
+        return error_response("PRODUCT_CONTRACT_NOT_FOUND", "Product spec contract was not found.", 404)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+
+
+@csrf_exempt
+@require_POST
+def pricing_experiment_review(request, brief_id):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        brief = review_pricing_experiment(payload, brief_id=str(brief_id), actor_id=actor_id, correlation_id=correlation_id)
+        response = {
+            "pricing_experiment": serialize_pricing_experiment(brief),
+            "correlation_id": correlation_id,
+            "no_payment": True,
+            "no_spend": True,
+        }
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=200)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except PricingExperimentBrief.DoesNotExist:
+        return error_response("PRICING_EXPERIMENT_NOT_FOUND", "Pricing experiment brief was not found.", 404)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+
+
+@csrf_exempt
+@require_POST
+def github_issue_request_create(request):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        issue = create_github_issue_request(payload, actor_id=actor_id, correlation_id=correlation_id)
+        response = {"github_issue_request": serialize_github_issue_request(issue), "correlation_id": correlation_id, "external_call": False}
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=201)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except Project.DoesNotExist:
+        return error_response("PROJECT_NOT_FOUND", "Project was not found.", 404)
+    except ProjectConnection.DoesNotExist:
+        return error_response("PROJECT_CONNECTION_NOT_FOUND", "GitHub connection was not found.", 404)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+
+
+@csrf_exempt
+@require_POST
+def github_issue_approval_request(request, issue_id):
+    try:
+        payload, idempotency_key, correlation_id, actor_id, request_hash, existing = begin_idempotent_post(request)
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        issue = request_github_issue_approval(payload, issue_id=str(issue_id), actor_id=actor_id, correlation_id=correlation_id)
+        response = {"github_issue_request": serialize_github_issue_request(issue), "correlation_id": correlation_id, "external_call": False}
+        return store_idempotent_response(key=idempotency_key, request_hash=request_hash, response=response, status_code=200)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except GithubIssueRequest.DoesNotExist:
+        return error_response("GITHUB_ISSUE_REQUEST_NOT_FOUND", "GitHub issue request was not found.", 404)
+    except InvalidProductContractPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProductContractBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
 
 
 def product_dashboard_rendered_view(request):

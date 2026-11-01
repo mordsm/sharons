@@ -53,6 +53,7 @@ from executive_assistant.services import (
     create_email_draft_approval_request,
     create_executive_brief,
     dry_run_provider_sync_config,
+    fetch_provider_records,
     executive_assistant_operational_snapshot,
     executive_assistant_status,
     executive_assistant_queue_counts,
@@ -1105,6 +1106,35 @@ def executive_provider_sync_config_dry_run(request, config_id):
         response = {"readiness": readiness, "correlation_id": correlation_id}
         IdempotencyRecord.objects.create(key=idempotency_key, request_hash=request_hash, response_payload=response, status_code=200)
         return JsonResponse(response, status=200)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except ExecutiveProviderSyncConfig.DoesNotExist:
+        return error_response("EXECUTIVE_PROVIDER_SYNC_CONFIG_NOT_FOUND", "Provider sync config was not found.", 404)
+    except InvalidExecutiveBriefPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ExecutiveProviderConnectorBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+    except ExecutiveAssistantError as exc:
+        return error_response(exc.code, str(exc), 400)
+
+
+@csrf_exempt
+@require_POST
+def executive_provider_sync_config_fetch(request, config_id):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+        if not isinstance(payload, dict):
+            raise InvalidExecutiveBriefPayloadError("Request body must be a JSON object.")
+        idempotency_key, correlation_id, actor_id = change_headers(request)
+        request_hash = canonical_hash({"path": request.path, "payload": payload})
+        existing = IdempotencyRecord.objects.filter(key=idempotency_key).first()
+        if existing:
+            if existing.request_hash != request_hash:
+                return error_response("IDEMPOTENCY_CONFLICT", "Idempotency key was already used for a different request.", 409)
+            return JsonResponse(existing.response_payload, status=existing.status_code)
+        result = fetch_provider_records(payload, config_id=str(config_id), actor_id=actor_id, correlation_id=correlation_id)
+        IdempotencyRecord.objects.create(key=idempotency_key, request_hash=request_hash, response_payload=result, status_code=200)
+        return JsonResponse(result, status=200)
     except json.JSONDecodeError:
         return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
     except ExecutiveProviderSyncConfig.DoesNotExist:

@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "developer",
     "project_manager",
     "qa",
+    "marketing",
 ]
 
 MIDDLEWARE = [

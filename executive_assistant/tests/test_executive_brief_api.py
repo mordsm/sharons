@@ -302,7 +302,8 @@ def test_executive_provider_connectors_status_lists_disabled_read_only_stubs(cli
     assert status["real_provider_connections_enabled"] is False
     connector_keys = {connector["connector_key"] for connector in status["connectors"]}
     assert {"gmail_readonly", "google_calendar_readonly", "outlook_email_readonly", "outlook_calendar_readonly"}.issubset(connector_keys)
-    assert all(connector["adapter_available"] is False for connector in status["connectors"])
+    assert all(connector["adapter_available"] is True for connector in status["connectors"])
+    assert all(connector["read_only_fetch_approved"] is True for connector in status["connectors"])
     assert all(connector["external_action_enabled"] is False for connector in status["connectors"])
 
 
@@ -322,7 +323,7 @@ def test_executive_provider_sync_config_readiness_reports_disabled_adapter(clien
     readiness = response.json()["readiness"]
     assert readiness["ready"] is True
     assert readiness["external_action_enabled"] is False
-    assert readiness["adapter_available"] is False
+    assert readiness["adapter_available"] is True
     assert readiness["oauth_configured"] is False
     assert readiness["dry_run_only"] is True
     assert readiness["connector"]["connector_key"] == "gmail_readonly"

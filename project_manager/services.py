@@ -1,7 +1,11 @@
+from datetime import timedelta
+
 from django.db import transaction
+from django.utils import timezone
 
 from core.services import objective_health, serialize_task_summary
 from governance.models import AuditEvent
+from governance.services import create_approval_request
 from operations.models import AcceptanceCriterion, AgentDefinition, Task
 from operations.services import upsert_task
 from portfolio.models import Objective
@@ -57,6 +61,8 @@ def serialize_blocker_review(review: BlockerReview) -> dict:
         "blocker_summary": review.blocker_summary,
         "recommended_action": review.recommended_action,
         "escalation_required": review.escalation_required,
+        "follow_up_task_id": str(review.follow_up_task_id) if review.follow_up_task_id else None,
+        "approval_request_id": str(review.approval_request_id) if review.approval_request_id else None,
         "no_external_action": review.no_external_action,
         "created_by": review.created_by,
         "created_at": review.created_at.isoformat(),
@@ -120,7 +126,42 @@ def create_execution_review(payload: dict, *, actor_id: str, correlation_id: str
             correlation_id=correlation_id,
             metadata={"objective_id": str(objective.id), "health_status": review.health_status, "no_external_action": True},
         )
+        follow_up_ids = _create_execution_follow_ups(review, actor=actor, correlation_id=correlation_id)
+        review.task_snapshot = {**review.task_snapshot, "follow_up_task_ids": follow_up_ids}
+        review.save(update_fields=["task_snapshot"])
     return review
+
+
+def _create_execution_follow_ups(review: ExecutionReview, *, actor: str, correlation_id: str) -> list[str]:
+    titles = {
+        "REVIEW_BLOCKERS": "Review blocked work and choose an unblock path",
+        "VERIFY_DELIVERIES": "Verify delivered work before counting progress",
+    }
+    task_ids = []
+    for recommendation in review.recommendations:
+        action = str(recommendation.get("action", "")).strip()
+        title = titles.get(action)
+        if not title:
+            continue
+        task, _created = upsert_task(
+            {
+                "objective_id": str(review.objective_id),
+                "external_key": f"project-manager-review:{review.objective_id}:{action}",
+                "title": title,
+                "business_outcome": str(recommendation.get("reason", title)),
+                "acceptance_criteria": [
+                    {
+                        "description": f"The {action} follow-up is completed or explicitly dismissed.",
+                        "criterion_type": AcceptanceCriterion.CriterionType.MANUAL,
+                        "required": True,
+                    }
+                ],
+            },
+            actor_id=actor,
+            correlation_id=correlation_id,
+        )
+        task_ids.append(str(task.id))
+    return task_ids
 
 
 def propose_milestones(payload: dict, *, objective_id: str, actor_id: str, correlation_id: str) -> list[MilestoneProposal]:
@@ -187,6 +228,29 @@ def propose_milestones(payload: dict, *, objective_id: str, actor_id: str, corre
     return proposals
 
 
+def decide_milestone_proposal(payload: dict, *, proposal_id: str, actor_id: str, correlation_id: str) -> MilestoneProposal:
+    decision = str(payload.get("decision", "")).strip()
+    if decision not in {MilestoneProposal.Status.ACCEPTED, MilestoneProposal.Status.DISMISSED}:
+        raise InvalidProjectManagerPayloadError("decision must be ACCEPTED or DISMISSED.")
+    actor = actor_id.strip() or "api"
+    with transaction.atomic():
+        proposal = MilestoneProposal.objects.select_for_update().get(id=proposal_id)
+        if proposal.status != MilestoneProposal.Status.PROPOSED:
+            raise ProjectManagerBlockedError("Only proposed milestones can be accepted or dismissed.")
+        proposal.status = decision
+        proposal.save(update_fields=["status"])
+        AuditEvent.objects.create(
+            actor_type=AuditEvent.ActorType.SYSTEM,
+            actor_id=actor,
+            action="project_manager.milestone.decided",
+            object_type="project_manager.MilestoneProposal",
+            object_id=str(proposal.id),
+            correlation_id=correlation_id,
+            metadata={"decision": decision, "task_id": str(proposal.task_id), "no_external_action": True},
+        )
+    return proposal
+
+
 def create_blocker_review(payload: dict, *, task_id: str, actor_id: str, correlation_id: str) -> BlockerReview:
     recommended_action = str(payload.get("recommended_action", "ESCALATE_OR_REASSIGN")).strip()
     blocker_summary = str(payload.get("blocker_summary", "")).strip()
@@ -206,6 +270,47 @@ def create_blocker_review(payload: dict, *, task_id: str, actor_id: str, correla
             no_external_action=True,
             created_by=actor,
         )
+        if escalation_required:
+            approval = create_approval_request(
+                subject_type="operations.Task",
+                subject_id=str(task.id),
+                subject_version=task.version,
+                action="project_manager.unblock_decision",
+                action_payload={
+                    "task_id": str(task.id),
+                    "blocker_review_id": str(review.id),
+                    "recommended_action": recommended_action,
+                    "blocker_summary": blocker_summary,
+                    "expected_version": task.version,
+                    "no_external_action": True,
+                },
+                requested_by=actor,
+                correlation_id=correlation_id,
+                expires_at=timezone.now() + timedelta(days=7),
+                reason_codes=["BLOCKED_TASK"],
+            )
+            review.approval_request_id = approval.id
+            review.save(update_fields=["approval_request_id"])
+        else:
+            follow_up, _created = upsert_task(
+                {
+                    "objective_id": str(task.objective_id),
+                    "external_key": f"project-manager-blocker:{task.id}",
+                    "title": f"Resolve blocker: {task.title}",
+                    "business_outcome": blocker_summary,
+                    "acceptance_criteria": [
+                        {
+                            "description": "The blocked task has an owner and a next action, or the blocker is dismissed.",
+                            "criterion_type": AcceptanceCriterion.CriterionType.MANUAL,
+                            "required": True,
+                        }
+                    ],
+                },
+                actor_id=actor,
+                correlation_id=correlation_id,
+            )
+            review.follow_up_task = follow_up
+            review.save(update_fields=["follow_up_task"])
         AuditEvent.objects.create(
             actor_type=AuditEvent.ActorType.SYSTEM,
             actor_id=actor,
@@ -213,7 +318,13 @@ def create_blocker_review(payload: dict, *, task_id: str, actor_id: str, correla
             object_type="project_manager.BlockerReview",
             object_id=str(review.id),
             correlation_id=correlation_id,
-            metadata={"task_id": str(task.id), "recommended_action": recommended_action, "no_external_action": True},
+            metadata={
+                "task_id": str(task.id),
+                "recommended_action": recommended_action,
+                "approval_request_id": str(review.approval_request_id) if review.approval_request_id else "",
+                "follow_up_task_id": str(review.follow_up_task_id) if review.follow_up_task_id else "",
+                "no_external_action": True,
+            },
         )
     return review
 

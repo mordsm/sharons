@@ -1,6 +1,7 @@
 import json
 
 from django.http import JsonResponse
+from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
@@ -15,6 +16,7 @@ from project_manager.services import (
     ProjectManagerError,
     create_blocker_review,
     create_execution_review,
+    decide_milestone_proposal,
     project_manager_status,
     propose_milestones,
     serialize_blocker_review,
@@ -127,4 +129,52 @@ def task_blocker_review_create(request, task_id):
         return error_response(exc.code, str(exc), 409)
     except ProjectManagerError as exc:
         return error_response(exc.code, str(exc), 400)
+
+
+@csrf_exempt
+@require_POST
+def milestone_proposal_decide(request, proposal_id):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise InvalidProjectManagerPayloadError("Request body must be a JSON object.")
+        context, existing = idempotent_context(request, payload)
+        if existing:
+            return existing
+        idempotency_key, correlation_id, actor_id, request_hash = context
+        proposal = decide_milestone_proposal(payload, proposal_id=str(proposal_id), actor_id=actor_id, correlation_id=correlation_id)
+        response = {"milestone_proposal": serialize_milestone_proposal(proposal), "correlation_id": correlation_id}
+        IdempotencyRecord.objects.create(key=idempotency_key, request_hash=request_hash, response_payload=response, status_code=200)
+        return JsonResponse(response, status=200)
+    except json.JSONDecodeError:
+        return error_response("INVALID_JSON", "Request body must be valid JSON.", 400)
+    except MilestoneProposal.DoesNotExist:
+        return error_response("MILESTONE_PROPOSAL_NOT_FOUND", "Milestone proposal was not found.", 404)
+    except InvalidProjectManagerPayloadError as exc:
+        return error_response(exc.code, str(exc), 400)
+    except ProjectManagerBlockedError as exc:
+        return error_response(exc.code, str(exc), 409)
+    except ProjectManagerError as exc:
+        return error_response(exc.code, str(exc), 400)
+
+
+@require_GET
+def project_manager_dashboard(request):
+    reviews = list(ExecutionReview.objects.select_related("objective").order_by("-created_at")[:10])
+    blocked_tasks = list(Task.objects.filter(status=Task.Status.BLOCKED).select_related("objective").order_by("-updated_at")[:20])
+    proposals = list(
+        MilestoneProposal.objects.filter(status=MilestoneProposal.Status.PROPOSED).select_related("objective", "task").order_by("created_at")[:20]
+    )
+    blocker_reviews = list(BlockerReview.objects.select_related("task", "follow_up_task").order_by("-created_at")[:10])
+    return render(
+        request,
+        "project_manager/dashboard.html",
+        {
+            "reviews": reviews,
+            "blocked_tasks": blocked_tasks,
+            "proposals": proposals,
+            "blocker_reviews": blocker_reviews,
+            "status": project_manager_status(),
+        },
+    )
 

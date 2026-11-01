@@ -1,22 +1,24 @@
 # Product Manager Roadmap
 
-## Now
+## Done
 
-- Create bounded product spec contracts.
-- Generate internal product spec drafts.
-- Review and approve/reject product drafts.
-- Keep repository writes disabled.
+- Bounded product spec contracts and internal drafts.
+- Draft review.
+- Roadmap milestones, including a link to an active 90-day objective on the same project.
+- Approved specs converted into internal task proposals.
+- Product readiness and roadmap views.
+- Feature scoring.
+- User-research artifact contracts.
+- Competitive-analysis drafts.
+- Approval-backed GitHub issue creation. The only action is `create_issue`.
+- Internal pricing experiment briefs in ILS. Review does not charge or spend.
 
 ## Next
 
-- Add roadmap/milestone artifacts linked to 90-day objectives.
-- Convert approved product specs into internal task proposals.
-- Add product readiness dashboard per project.
+- No further feature in this product slice. A live GitHub issue waits until a title, body, and repository are chosen.
 
-## Later
+## Still closed
 
-- User research artifact contracts.
-- Feature scoring and prioritization.
-- Competitive analysis drafts.
-- Approval-backed GitHub issue creation.
-
+- Product repository writes.
+- Publishing.
+- Direct customer contact.

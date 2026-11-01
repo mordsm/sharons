@@ -19,7 +19,8 @@ from django.utils import timezone
 
 from governance.models import AuditEvent
 from operations.models import Task
-from portfolio.models import Project, ProjectConnection
+from portfolio.models import Objective, ObjectiveProjectLink, Project, ProjectConnection
+from product.services import ProductContractBlockedError
 from product.models import (
     ProductFeature,
     ProductFeedback,
@@ -324,6 +325,16 @@ class RoadmapAndMilestoneEngine:
     """
 
     @classmethod
+    def objective_for_project(cls, project: Project, objective_id: str | uuid.UUID | None):
+        if not objective_id:
+            return None
+        objective = Objective.objects.get(id=objective_id, status=Objective.Status.ACTIVE)
+        linked = ObjectiveProjectLink.objects.filter(objective=objective, project=project, active=True).exists()
+        if not linked:
+            raise ProductContractBlockedError("Milestone objective must be an active objective linked to this project.")
+        return objective
+
+    @classmethod
     def create_milestone(
         cls,
         project_id: str | uuid.UUID,
@@ -331,10 +342,13 @@ class RoadmapAndMilestoneEngine:
         target_date: date,
         description: str = "",
         release_notes: str = "",
+        objective_id: str | uuid.UUID | None = None,
     ) -> ProductMilestone:
         project = Project.objects.get(id=project_id)
+        objective = cls.objective_for_project(project, objective_id)
         return ProductMilestone.objects.create(
             project=project,
+            objective=objective,
             name=name,
             target_date=target_date,
             description=description,
@@ -343,8 +357,39 @@ class RoadmapAndMilestoneEngine:
         )
 
     @classmethod
+    def link_objective(
+        cls,
+        milestone_id: str | uuid.UUID,
+        objective_id: str | uuid.UUID,
+        *,
+        actor_id: str,
+        correlation_id: str,
+    ) -> ProductMilestone:
+        actor = actor_id.strip() or "api"
+        with transaction.atomic():
+            milestone = ProductMilestone.objects.select_for_update().select_related("project").get(id=milestone_id)
+            objective = cls.objective_for_project(milestone.project, objective_id)
+            milestone.objective = objective
+            milestone.save(update_fields=["objective", "updated_at"])
+            AuditEvent.objects.create(
+                actor_type=AuditEvent.ActorType.SYSTEM,
+                actor_id=actor,
+                action="product.milestone.objective_linked",
+                object_type="product.ProductMilestone",
+                object_id=str(milestone.id),
+                correlation_id=correlation_id,
+                metadata={
+                    "project_id": str(milestone.project_id),
+                    "objective_id": str(objective.id),
+                    "objective_code": objective.code,
+                    "no_external_write": True,
+                },
+            )
+        return milestone
+
+    @classmethod
     def get_roadmap(cls, project_id: str | uuid.UUID | None = None) -> list[dict[str, Any]]:
-        milestones_qs = ProductMilestone.objects.prefetch_related("features").all()
+        milestones_qs = ProductMilestone.objects.select_related("objective").prefetch_related("features").all()
         if project_id:
             milestones_qs = milestones_qs.filter(project_id=project_id)
 
@@ -378,6 +423,8 @@ class RoadmapAndMilestoneEngine:
             roadmap.append({
                 "id": str(m.id),
                 "project_id": str(m.project_id),
+                "objective_id": str(m.objective_id) if m.objective_id else None,
+                "objective_code": m.objective.code if m.objective_id else None,
                 "name": m.name,
                 "target_date": m.target_date.isoformat(),
                 "days_remaining": (m.target_date - now_date).days,

@@ -9,7 +9,13 @@ from mailbox.models import MockEmailMessage
 from mailbox.services import ingest_mock_email
 from operations.models import AcceptanceCriterion, AgentDefinition, Task
 from operations.services import transition_task, upsert_task
-from executive_assistant.connectors import get_read_only_connector, list_read_only_connectors
+from executive_assistant.connectors import (
+    ApprovedReadOnlyConnector,
+    ReadOnlyConnectorAdapterError,
+    get_read_only_connector,
+    list_read_only_connectors,
+)
+from executive_assistant.provider_http import ProviderHttpError
 from executive_assistant.models import (
     ExecutiveBrief,
     ExecutiveBriefTaskProposal,
@@ -307,6 +313,72 @@ def dry_run_provider_sync_config(*, config_id: str, actor_id: str, correlation_i
     )
     readiness["dry_run"] = dry_run
     return readiness
+
+
+def _provider_datetime(value: str) -> str:
+    text = value.strip()
+    if len(text) == 10:
+        return f"{text}T00:00:00Z"
+    return text
+
+
+def fetch_provider_records(payload: dict, *, config_id: str, actor_id: str, correlation_id: str) -> dict:
+    try:
+        limit = int(payload.get("limit", 10))
+    except (TypeError, ValueError) as exc:
+        raise InvalidExecutiveBriefPayloadError("limit must be an integer.") from exc
+    if limit < 1 or limit > 25:
+        raise InvalidExecutiveBriefPayloadError("limit must be between 1 and 25.")
+    actor = actor_id.strip() or "api"
+    with transaction.atomic():
+        config = ExecutiveProviderSyncConfig.objects.select_for_update().get(id=config_id)
+        if config.status != ExecutiveProviderSyncConfig.Status.READY_FOR_CONNECTOR:
+            raise ExecutiveProviderConnectorBlockedError("Provider fetch requires a config that is ready for a connector.")
+        if not config.no_external_action or config.sync_mode != ExecutiveProviderSyncConfig.SyncMode.READ_ONLY:
+            raise ExecutiveProviderConnectorBlockedError("Provider fetch cannot send email or schedule calendar events.")
+        connector = get_read_only_connector(config)
+        if not isinstance(connector, ApprovedReadOnlyConnector):
+            raise ExecutiveProviderConnectorBlockedError("No approved read-only connector matches this provider.")
+        try:
+            records = connector.fetch_records(config, limit=limit)
+        except (ReadOnlyConnectorAdapterError, ProviderHttpError) as exc:
+            raise ExecutiveProviderConnectorBlockedError(str(exc)) from exc
+        ingested = []
+        for record in records:
+            if config.provider_type == ExecutiveProviderSyncConfig.ProviderType.EMAIL:
+                message, created = ingest_read_only_email(record, actor_id=actor, correlation_id=correlation_id)
+                ingested.append({"id": str(message.id), "kind": "email", "created": created})
+            else:
+                calendar_payload = dict(record)
+                calendar_payload["starts_at"] = _provider_datetime(str(calendar_payload.get("starts_at", "")))
+                calendar_payload["ends_at"] = _provider_datetime(str(calendar_payload.get("ends_at", "")))
+                event, created = ingest_read_only_calendar_event(calendar_payload, actor_id=actor, correlation_id=correlation_id)
+                ingested.append({"id": str(event.id), "kind": "calendar", "created": created})
+        config.last_sync_at = timezone.now()
+        config.save(update_fields=["last_sync_at"])
+        AuditEvent.objects.create(
+            actor_type=AuditEvent.ActorType.SYSTEM,
+            actor_id=actor,
+            action="executive_assistant.provider_sync_config.fetched",
+            object_type="executive_assistant.ExecutiveProviderSyncConfig",
+            object_id=str(config.id),
+            correlation_id=correlation_id,
+            metadata={
+                "connector_key": connector.connector_key,
+                "record_count": len(records),
+                "will_send_email": False,
+                "will_schedule_calendar": False,
+            },
+        )
+    return {
+        "provider_sync_config_id": str(config.id),
+        "connector_key": connector.connector_key,
+        "records_fetched": len(records),
+        "ingested": ingested,
+        "will_send_email": False,
+        "will_schedule_calendar": False,
+        "correlation_id": correlation_id,
+    }
 
 
 def provider_sync_config_plan(*, config_id: str) -> dict:

@@ -15,5 +15,6 @@ scope, APIs and next work while preserving the current tested app boundaries.
 
 - `chief_of_staff/`
 - `product_manager/`
+- `project_manager/`
 - `executive_assistant/`
 

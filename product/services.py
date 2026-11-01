@@ -4,7 +4,7 @@ from governance.models import AuditEvent
 from operations.models import AcceptanceCriterion, AgentDefinition, Task
 from operations.services import upsert_task
 from portfolio.models import Project, ProjectConnection
-from product.models import ProductSpecContract, ProductSpecDraft
+from product.models import ProductSpecContract, ProductSpecDraft, UserResearchContract
 
 
 class ProductContractError(Exception):
@@ -69,6 +69,7 @@ def product_manager_status(*, project_id: str = "") -> dict:
         )
         contract_count = ProductSpecContract.objects.filter(project=project).count()
         draft_count = ProductSpecDraft.objects.filter(contract__project=project).count()
+        research_count = UserResearchContract.objects.filter(spec_contract__project=project).count()
         project_statuses.append(
             {
                 "project_id": str(project.id),
@@ -88,6 +89,7 @@ def product_manager_status(*, project_id: str = "") -> dict:
                 ],
                 "product_spec_contracts": contract_count,
                 "product_spec_drafts": draft_count,
+                "user_research_contracts": research_count,
             }
         )
 

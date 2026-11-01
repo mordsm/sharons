@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Project Manager{% endblock %}
+
+{% block content %}
+<h1>Project coordination</h1>
+<p class="meta">Internal reviews, blocked work, and open milestone proposals. External actions stay off.</p>
+
+<div class="metric-grid">
+  <div class="metric"><span>{{ status.blocked_tasks }}</span><strong>Blocked tasks</strong></div>
+  <div class="metric"><span>{{ status.execution_reviews }}</span><strong>Execution reviews</strong></div>
+  <div class="metric"><span>{{ status.milestone_proposals }}</span><strong>Milestone proposals</strong></div>
+  <div class="metric"><span>{{ status.blocker_reviews }}</span><strong>Blocker reviews</strong></div>
+</div>
+
+<section class="panel">
+  <h2>Blocked tasks</h2>
+  {% if blocked_tasks %}
+  <table>
+    <thead><tr><th>Objective</th><th>Task</th><th>Updated</th></tr></thead>
+    <tbody>
+      {% for task in blocked_tasks %}
+      <tr>
+        <td>{{ task.objective.code }}</td>
+        <td><a href="/api/v1/tasks/{{ task.id }}/">{{ task.title }}</a></td>
+        <td>{{ task.updated_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No blocked tasks.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Open milestone proposals</h2>
+  {% if proposals %}
+  <table>
+    <thead><tr><th>Objective</th><th>Milestone</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for proposal in proposals %}
+      <tr>
+        <td>{{ proposal.objective.code }}</td>
+        <td>{{ proposal.title }}</td>
+        <td>{{ proposal.status }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No open milestone proposals.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Recent execution reviews</h2>
+  {% if reviews %}
+  <table>
+    <thead><tr><th>Objective</th><th>Health</th><th>Summary</th></tr></thead>
+    <tbody>
+      {% for review in reviews %}
+      <tr>
+        <td>{{ review.objective.code }}</td>
+        <td>{{ review.health_status }}</td>
+        <td>{{ review.summary }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No execution reviews.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Recent blocker reviews</h2>
+  {% if blocker_reviews %}
+  <table>
+    <thead><tr><th>Task</th><th>Next step</th><th>Summary</th></tr></thead>
+    <tbody>
+      {% for review in blocker_reviews %}
+      <tr>
+        <td>{{ review.task.title }}</td>
+        <td>
+          {% if review.approval_request_id %}Approval {{ review.approval_request_id }}{% endif %}
+          {% if review.follow_up_task %}Follow-up: {{ review.follow_up_task.title }}{% endif %}
+        </td>
+        <td>{{ review.blocker_summary }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No blocker reviews.</p>
+  {% endif %}
+</section>
+{% endblock %}

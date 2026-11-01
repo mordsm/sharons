@@ -286,3 +286,43 @@ class InboxEvent(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["source", "external_event_id"], name="unique_inbox_event_source_external_id"),
         ]
+
+
+class SecretReference(models.Model):
+    class Purpose(models.TextChoices):
+        OAUTH_READ_ONLY = "OAUTH_READ_ONLY"
+        OAUTH_REFRESH = "OAUTH_REFRESH"
+        GITHUB_ISSUE_CREATE = "GITHUB_ISSUE_CREATE"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=128, unique=True)
+    purpose = models.CharField(max_length=32, choices=Purpose.choices)
+    provider = models.CharField(max_length=64)
+    env_var_name = models.CharField(max_length=80)
+    active = models.BooleanField(default=True)
+    created_by = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def clean(self) -> None:
+        from django.core.exceptions import ValidationError
+        import re
+
+        if not self.name or not self.name.strip():
+            raise ValidationError({"name": "Secret reference name cannot be empty."})
+        if self.purpose not in self.Purpose.values:
+            raise ValidationError({"purpose": "Purpose must be OAUTH_READ_ONLY, OAUTH_REFRESH or GITHUB_ISSUE_CREATE."})
+        if not self.provider or not self.provider.strip():
+            raise ValidationError({"provider": "Provider cannot be empty."})
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]{2,79}", self.env_var_name or ""):
+            raise ValidationError({"env_var_name": "Environment variable name must be uppercase and not contain a secret value."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        self.name = self.name.strip()
+        self.provider = self.provider.strip().lower()
+        self.env_var_name = self.env_var_name.strip()
+        self.created_by = self.created_by.strip() or "api"
+        super().save(*args, **kwargs)

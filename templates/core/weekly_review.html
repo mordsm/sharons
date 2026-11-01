@@ -20,6 +20,35 @@
 </div>
 
 <div class="panel">
+  <h2>Mental Trainer launch decisions</h2>
+  <p class="meta">{{ launch_decisions.objective_code }} {{ launch_decisions.objective_name }}</p>
+  <h3>Approve or hold</h3>
+  <ul>
+    {% for item in launch_decisions.approve %}
+      <li>{{ item.text }} <span class="meta">{{ item.source }}</span></li>
+    {% empty %}
+      <li>No launch decision is waiting.</li>
+    {% endfor %}
+  </ul>
+  <h3>Blocked</h3>
+  <ul>
+    {% for item in launch_decisions.blocked %}
+      <li>{{ item.text }} <span class="meta">{{ item.source }}</span></li>
+    {% empty %}
+      <li>No blocked Mental Trainer task.</li>
+    {% endfor %}
+  </ul>
+  <h3>Still assumptions</h3>
+  <ul>
+    {% for item in launch_decisions.assumptions %}
+      <li>{{ item.text }} <span class="meta">{{ item.source }}</span></li>
+    {% empty %}
+      <li>No open assumptions were recorded.</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="panel">
   <h2>Risks</h2>
   <table>
     <thead><tr><th>Level</th><th>Risk</th><th>Count</th></tr></thead>

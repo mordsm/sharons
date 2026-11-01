@@ -94,3 +94,34 @@ def test_weekly_review_api_returns_structured_report(client, review_data):
     assert body["counts"]["unverified_deliveries"] == 1
     assert body["risks"]
     assert body["next_actions"]
+    assert "launch_decisions" in body
+
+
+@pytest.mark.django_db
+def test_weekly_review_lists_mental_trainer_launch_decisions(client, objective):
+    from marketing.services import create_marketing_request
+
+    create_marketing_request(
+        {
+            "objective": "Prepare a 30-day Israel draft for the sale-ready beta. The offer and price remain open.",
+            "objective_id": str(objective.id),
+            "geography": ["Israel"],
+            "currency": "ILS",
+        },
+        actor_id="marketing",
+        correlation_id="weekly-launch",
+    )
+    Task.objects.create(
+        objective=objective,
+        title="Landing page stack is undecided",
+        status=Task.Status.BLOCKED,
+        created_by="chief_of_staff",
+    )
+
+    response = client.get("/api/v1/reports/weekly/")
+
+    decisions = response.json()["weekly_review"]["launch_decisions"]
+    assert decisions["objective_code"] == "O1"
+    assert any(item["source"] == "marketing" for item in decisions["approve"])
+    assert any(item["text"] == "Landing page stack is undecided" for item in decisions["blocked"])
+    assert any("not supplied" in item["text"] or "hypothesis" in item["text"] for item in decisions["assumptions"])

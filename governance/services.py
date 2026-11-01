@@ -1415,6 +1415,33 @@ def execute_approved_approval(approval_id: str, *, actor_id: str, correlation_id
             )
             return execution
 
+        if approval.action == "product.github.issue.create":
+            from product.github_issues import execute_approved_github_issue
+            from product.services import ProductContractBlockedError
+
+            try:
+                result = execute_approved_github_issue(approval)
+            except ProductContractBlockedError as exc:
+                raise ApprovedActionExecutionError(str(exc)) from exc
+            execution = ApprovedActionExecution.objects.create(
+                approval=approval,
+                action=approval.action,
+                status=ApprovedActionExecution.Status.SUCCEEDED,
+                result=result,
+                executed_by=actor,
+                correlation_id=correlation,
+            )
+            AuditEvent.objects.create(
+                actor_type=AuditEvent.ActorType.SYSTEM,
+                actor_id=actor,
+                action="governance.approval.executed",
+                object_type="governance.ApprovedActionExecution",
+                object_id=str(execution.id),
+                correlation_id=correlation,
+                metadata={"approval_id": str(approval.id), "executed_action": approval.action, "issue_number": result["issue_number"]},
+            )
+            return execution
+
         if approval.action != "operations.task.transition":
             execution = ApprovedActionExecution.objects.create(
                 approval=approval,
