@@ -98,19 +98,25 @@ def executive_dashboard(request):
                     actor_id=request.user.get_username() or "chief_of_staff_dashboard",
                     correlation_id="dashboard-cockpit-qa-review",
                 )
-                messages.success(request, f"QA review created: {review.decision}")
+                messages.success(
+                    request,
+                    f"QA did not accept “{review.task.title}”. It still needs evidence before progress counts.",
+                )
+                return redirect("task-detail", task_id=review.task_id)
             elif action == "create_next_executive_brief":
                 brief = create_next_executive_brief_from_cockpit(
                     actor_id=request.user.get_username() or "chief_of_staff_dashboard",
                     correlation_id="dashboard-cockpit-executive-brief",
                 )
                 messages.success(request, f"Executive brief created: {brief.title}")
+                return redirect("executive-brief-detail", brief_id=brief.id)
             elif action == "open_next_finance_review":
                 record = open_next_finance_review_from_cockpit(
                     actor_id=request.user.get_username() or "chief_of_staff_dashboard",
                     correlation_id="dashboard-cockpit-finance-review",
                 )
                 messages.success(request, f"Finance review opened: {record.description}")
+                return redirect("finance-dashboard")
             else:
                 raise ValueError("Unknown executive dashboard action.")
         except (RuleEngineWorkItem.DoesNotExist, InvalidRuleEngineWorkItemUpdateError, CockpitActionError, ValueError) as exc:

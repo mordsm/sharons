@@ -143,6 +143,63 @@ def test_executive_dashboard_renders_agent_queue_cockpit(client, dashboard_user,
     assert "QA" in content
     assert "Rule Work" in content
     assert "Verify" in content
+    assert "No spec is ready to draft. There is no product spec on file." in content
+    assert "No build is ready to plan. There is no developer contract on file." in content
+
+
+@pytest.mark.django_db
+def test_dashboard_explains_when_specs_and_contracts_are_not_ready(client, dashboard_user, objective):
+    task = Task.objects.create(
+        objective=objective,
+        title="Spec still in progress",
+        status=Task.Status.IN_PROGRESS,
+        created_by="product_manager",
+    )
+    project = Project.objects.create(
+        slug="mental-trainer-not-ready",
+        name="Mental Trainer Not Ready",
+        status=Project.Status.ACTIVE,
+        owner="chief_of_staff",
+    )
+    connection = ProjectConnection.objects.create(
+        project=project,
+        connection_type=ProjectConnection.ConnectionType.REPOSITORY,
+        adapter_type="product_manager_read_only",
+        permission_mode=ProjectConnection.PermissionMode.READ_ONLY,
+        capabilities={"spec_contracts": True},
+    )
+    ProductSpecContract.objects.create(
+        task=task,
+        project=project,
+        project_connection=connection,
+        title="Onboarding PRD",
+        objective="Define onboarding.",
+        problem_statement="Users need first-session guidance.",
+        requirements=[{"id": "REQ-1", "text": "Capture first-session goal."}],
+        status=ProductSpecContract.Status.IN_PROGRESS,
+        created_by="chief_of_staff",
+    )
+    DeveloperWorkContract.objects.create(
+        task=task,
+        project=project,
+        project_connection=connection,
+        title="Onboarding implementation contract",
+        objective="Implement goal capture.",
+        scope=["Add goal field"],
+        acceptance_focus=["Run onboarding tests"],
+        status=DeveloperWorkContract.Status.IN_PROGRESS,
+        created_by="developer",
+    )
+
+    client.force_login(dashboard_user)
+    response = client.get("/")
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "A product spec is on file, but none of them is READY." in content
+    assert "A developer contract is on file, but none of them is READY." in content
+    assert "Draft Next Spec" not in content
+    assert "Plan Next Build" not in content
 
 
 @pytest.mark.django_db
@@ -347,6 +404,7 @@ def test_executive_dashboard_can_create_next_qa_review_without_accepting_task(cl
     response = client.post("/", {"action": "create_next_qa_review"})
 
     assert response.status_code == 302
+    assert response.url == f"/api/v1/tasks/{task.id}/"
     review = VerificationReview.objects.get(task=task)
     assert review.decision == VerificationReview.Decision.NEEDS_MORE_EVIDENCE
     assert review.no_external_action is True
@@ -373,6 +431,7 @@ def test_executive_dashboard_can_create_next_executive_assistant_brief(client, d
 
     assert response.status_code == 302
     brief = ExecutiveBrief.objects.get(title="Cockpit Executive Brief")
+    assert response.url == f"/executive-assistant/briefs/{brief.id}/"
     assert brief.status == ExecutiveBrief.Status.READY
     assert brief.no_external_send is True
     assert brief.source_window == {"source": "executive_dashboard"}
@@ -401,6 +460,7 @@ def test_executive_dashboard_can_open_next_finance_review(client, dashboard_user
     response = client.post("/", {"action": "open_next_finance_review"})
 
     assert response.status_code == 302
+    assert response.url == "/finance/"
     record.refresh_from_db()
     assert record.reconciliation_status == FinancialRecord.ReconciliationStatus.NEEDS_REVIEW
     assert record.reconciliation_notes == "Opened from Executive Overview cockpit for finance review."
@@ -409,3 +469,28 @@ def test_executive_dashboard_can_open_next_finance_review(client, dashboard_user
         actor_id="ceo",
         object_id=str(record.id),
     ).exists()
+
+
+@pytest.mark.django_db
+def test_open_review_stays_available_when_finance_records_already_need_review(client, dashboard_user):
+    FinancialRecord.objects.create(
+        record_type=FinancialRecord.RecordType.EXPENSE,
+        occurred_on=date(2026, 9, 29),
+        amount="49.00",
+        currency="USD",
+        source="manual",
+        category="software",
+        description="API subscription",
+        external_reference="cockpit-finance-open",
+        reconciliation_status=FinancialRecord.ReconciliationStatus.NEEDS_REVIEW,
+        created_by="finance_agent",
+    )
+
+    client.force_login(dashboard_user)
+    page = client.get("/")
+    assert b"Open Review" in page.content
+    assert b"disabled" not in page.content.split(b"Open Review")[0].rsplit(b"<button", 1)[-1]
+    response = client.post("/", {"action": "open_next_finance_review"})
+
+    assert response.status_code == 302
+    assert response.url == "/finance/"

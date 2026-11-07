@@ -38,11 +38,15 @@
           <td>{{ queue.risk_queue }}<div class="meta">{{ queue.risk_label }}</div></td>
           <td>
             {% if queue.action %}
+              {% if queue.action_enabled %}
               <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="{{ queue.action }}">
-                <button type="submit" {% if not queue.action_enabled %}disabled{% endif %}>{{ queue.action_label }}</button>
+                <button type="submit">{{ queue.action_label }}</button>
               </form>
+              {% else %}
+              <span class="meta">{{ queue.action_unavailable_reason|default:"Nothing is waiting for this action." }}</span>
+              {% endif %}
             {% else %}
               <span class="meta">View</span>
             {% endif %}

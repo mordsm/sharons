@@ -259,6 +259,24 @@ def search_memory_records(
     return list(queryset[:limit])
 
 
+def _product_draft_unavailable_reason() -> str:
+    statuses = set(ProductSpecContract.objects.values_list("status", flat=True))
+    if not statuses:
+        return "No spec is ready to draft. There is no product spec on file."
+    if statuses <= {ProductSpecContract.Status.COMPLETED, ProductSpecContract.Status.CANCELLED}:
+        return "No spec is ready to draft. The product specs already on file are completed or cancelled."
+    return "No spec is ready to draft. A product spec is on file, but none of them is READY."
+
+
+def _developer_plan_unavailable_reason() -> str:
+    statuses = set(DeveloperWorkContract.objects.values_list("status", flat=True))
+    if not statuses:
+        return "No build is ready to plan. There is no developer contract on file."
+    if statuses <= {DeveloperWorkContract.Status.DELIVERED, DeveloperWorkContract.Status.CANCELLED}:
+        return "No build is ready to plan. The developer contracts already on file are delivered or cancelled."
+    return "No build is ready to plan. A developer contract is on file, but none of them is READY."
+
+
 def agent_queue_overview() -> list[dict]:
     open_task_statuses = [
         Task.Status.DRAFT,
@@ -298,6 +316,7 @@ def agent_queue_overview() -> list[dict]:
         reconciliation_status__in=[
             FinancialRecord.ReconciliationStatus.UNRECONCILED,
             FinancialRecord.ReconciliationStatus.DISCREPANCY,
+            FinancialRecord.ReconciliationStatus.NEEDS_REVIEW,
         ]
     )
 
@@ -328,6 +347,7 @@ def agent_queue_overview() -> list[dict]:
             "action": "create_next_product_draft",
             "action_label": "Draft Next Spec",
             "action_enabled": product_ready_contracts.exists(),
+            "action_unavailable_reason": _product_draft_unavailable_reason(),
         },
         {
             "agent_id": "executive_assistant",
@@ -373,6 +393,7 @@ def agent_queue_overview() -> list[dict]:
             "action": "create_next_developer_plan",
             "action_label": "Plan Next Build",
             "action_enabled": developer_ready_contracts.exists(),
+            "action_unavailable_reason": _developer_plan_unavailable_reason(),
         },
         {
             "agent_id": "project_manager",
@@ -500,18 +521,25 @@ def open_next_finance_review_from_cockpit(*, actor_id: str, correlation_id: str)
         .order_by("occurred_on", "created_at")
         .first()
     )
-    if record is None:
-        raise CockpitActionUnavailableError("No unreconciled or disputed finance record is available for review.")
+    if record is not None:
+        from finance.services import update_reconciliation
 
-    from finance.services import update_reconciliation
+        return update_reconciliation(
+            str(record.id),
+            status=FinancialRecord.ReconciliationStatus.NEEDS_REVIEW,
+            notes="Opened from Executive Overview cockpit for finance review.",
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+        )
 
-    return update_reconciliation(
-        str(record.id),
-        status=FinancialRecord.ReconciliationStatus.NEEDS_REVIEW,
-        notes="Opened from Executive Overview cockpit for finance review.",
-        actor_id=actor_id,
-        correlation_id=correlation_id,
+    record = (
+        FinancialRecord.objects.filter(reconciliation_status=FinancialRecord.ReconciliationStatus.NEEDS_REVIEW)
+        .order_by("occurred_on", "created_at")
+        .first()
     )
+    if record is None:
+        raise CockpitActionUnavailableError("No finance record is waiting for review.")
+    return record
 
 
 def executive_overview() -> dict:

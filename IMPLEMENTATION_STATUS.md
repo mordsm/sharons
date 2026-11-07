@@ -1,6 +1,8 @@
 # Implementation Status
 
 ## Last Completed
+- Executive Overview and task pages are verified. Draft Next Spec and Plan Next Build say why they cannot run, including when a spec or contract exists but is not READY. Review Evidence opens the task and says the work was not accepted. A finished task says it is finished and offers no further status move.
+- Executive Overview Create Brief opens the new brief, and Open Review opens the finance page. Open Review stays available when records are already marked needs review.
 - Marketing phase 2 records a content calendar, an experiment register, and a claims review. Calendar acknowledgement does not publish or send. Experiments cannot spend or store a significance claim. A claim stays unsupported until an evidence note is supplied.
 - The marketing agent is operative. It is seeded, the runner is on, and one assigned Mental Trainer task completed a draft run with publishing and spending off. The task remains `DELIVERED_UNVERIFIED` until a person verifies it.
 - Mental Trainer launch review is on the weekly report. It lists what to approve or hold, that no O1 task is blocked, and the open offer, price, and payment questions. A 30-day Israel marketing draft does not publish or spend. The task `Record the Mental Trainer launch decision list` is `COMPLETED` with verified evidence.
@@ -28,7 +30,7 @@
 - Gmail refresh uses the Google token endpoint and keeps the new access token in memory for that fetch. Send and calendar scheduling stay off.
 - The agent runner does not send email, schedule events, create GitHub issues, or write to a repository.
 - Provider sync configs still cannot store OAuth tokens or secrets.
-- Local Postgres for this workspace is running through Docker with dynamic host-port mapping. Current `.env` points at the assigned port from `docker compose port postgres 5432` (currently `63870`).
+- Local Postgres for this workspace is running through Docker with dynamic host-port mapping. Current `.env` points at the assigned port from `docker compose port postgres 5432` (currently `53134`).
 
 ## Next Step
 - A live GitHub issue still needs an approval bound to one exact payload. `SHARONS_GITHUB_TOKEN` is present. Do not create an issue until the title, body, and repository are chosen.
@@ -39,6 +41,8 @@
 - A GitHub issue is not created until a specific approval is executed.
 
 ## Verification
+- `uv run pytest core\tests\test_executive_dashboard.py operations\tests\test_task_dashboard.py -q` passed: 21 passed. Postgres had stopped; `docker compose up -d postgres` started it on `127.0.0.1:53134`, and `.env` was pointed at that port. `.env` is not committed.
+- Browser check of `http://127.0.0.1:8765/`: Product Manager and Developer showed that their records are completed, cancelled, or delivered, so Draft Next Spec and Plan Next Build stayed off. Review Evidence opened `Draft the 30-day Israel Mental Trainer launch plan` and said QA did not accept it. The task stayed `DELIVERED_UNVERIFIED`, and the status choices were Cancelled, In Progress, and Verifying. The completed task `Record the Mental Trainer launch decision list` said it is finished and had no status move.
 - `uv run pytest marketing\tests\test_marketing_api.py operations\tests\test_agent_runner.py -q` passed: 20 passed. This covers the content calendar, experiment register, and claims review.
 - Local Postgres was down. `docker compose up -d postgres` started it on `127.0.0.1:63870`, and `.env` was pointed at that port. `.env` is not committed.
 - `uv run python manage.py migrate` applied `marketing.0002_content_calendar_experiment_claims` and `product.0007_pricingexperimentbrief`.

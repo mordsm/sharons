@@ -83,6 +83,28 @@ def test_task_detail_renders_operating_record(client, dashboard_user, task):
     assert "pytest operations" in content
     assert "qa-agent" in content
     assert "operations.task.evidence_recorded" in content
+    assert 'value="DRAFT"' not in content
+    assert 'value="VERIFYING"' in content
+    assert "Status DELIVERED_UNVERIFIED is not finished." in content
+
+
+@pytest.mark.django_db
+def test_finished_task_has_no_status_move(client, dashboard_user, objective):
+    task = Task.objects.create(
+        objective=objective,
+        title="Closed launch task",
+        status=Task.Status.COMPLETED,
+        created_by="chief_of_staff",
+    )
+
+    client.force_login(dashboard_user)
+    response = client.get(f"/api/v1/tasks/{task.id}/")
+
+    assert response.status_code == 200
+    content = response.content.decode()
+    assert "Status COMPLETED is finished." in content
+    assert "This task has no further status move." in content
+    assert 'name="to_status"' not in content
 
 
 @pytest.mark.django_db

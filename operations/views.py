@@ -31,6 +31,8 @@ from operations.services import (
     TaskVerifyError,
     TaskTransitionError,
     TaskUpsertError,
+    ALLOWED_TRANSITIONS,
+    TERMINAL_TASK_STATUSES,
     assign_task,
     agent_performance,
     create_plan,
@@ -202,6 +204,25 @@ def task_list_page(request):
     )
 
 
+def _transition_form(task: Task, data=None) -> TaskTransitionForm:
+    if data is None:
+        form = TaskTransitionForm(initial={"expected_version": task.version})
+    else:
+        form = TaskTransitionForm(data)
+    allowed = sorted(ALLOWED_TRANSITIONS.get(task.status, set()))
+    form.fields["to_status"].choices = [(status, Task.Status(status).label) for status in allowed]
+    return form
+
+
+def _status_note(task: Task) -> str:
+    if task.status in TERMINAL_TASK_STATUSES:
+        return f"Status {task.status} is finished. This task has no further status move."
+    return (
+        f"Status {task.status} is not finished. Move it only to a next status. "
+        "Attach evidence and verify only after the work has been delivered."
+    )
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def task_detail_page(request, task_id):
@@ -213,7 +234,7 @@ def task_detail_page(request, task_id):
 
         try:
             if action == "transition":
-                form = TaskTransitionForm(request.POST)
+                form = _transition_form(task, request.POST)
                 if not form.is_valid():
                     raise ValueError("Transition form is invalid.")
                 payload = {
@@ -317,7 +338,8 @@ def task_detail_page(request, task_id):
     context = task_detail_context(str(task.id))
     context.update(
         {
-            "transition_form": TaskTransitionForm(initial={"expected_version": task.version}),
+            "transition_form": _transition_form(task),
+            "status_note": _status_note(task),
             "assign_form": TaskAssignForm(initial={"expected_version": task.version}),
             "evidence_form": TaskEvidenceForm(),
             "verify_form": TaskVerifyForm(),
